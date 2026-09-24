@@ -608,41 +608,14 @@
   },
   "target_boards": {
     "greenhouse": [
-      "vts:VTS",
-      "scaleai:Scale AI",
-      "gleanwork:Glean",
-      "brex:Brex",
-      "roofstock:Roofstock",
-      "toast:Toast",
-      "klaviyo:Klaviyo",
-      "anthropic:Anthropic",
-      "cargurus:CarGurus",
-      "formlabs:Formlabs",
-      "pathai:PathAI",
-      "everquote:EverQuote",
-      "lightmatter:Lightmatter",
-      "starburst:Starburst",
-      "carta:Carta",
-      "simplisafe:SimpliSafe",
-      "hubspot:HubSpot",
-      "acuitymd:AcuityMD"
+      "acme:Acme Corp",
+      "globex:Globex"
     ],
     "lever": [
-      "canarytechnologies:Canary Technologies"
+      "initech:Initech"
     ],
     "ashby": [
-      "eliseai:EliseAI",
-      "junipersquare:Juniper Square",
-      "decagon:Decagon",
-      "rillet:Rillet",
-      "ramp:Ramp",
-      "plaid:Plaid",
-      "whoop:WHOOP",
-      "openai:OpenAI",
-      "harvey:Harvey",
-      "sierra:Sierra",
-      "liquid-ai:Liquid AI",
-      "mercury:Mercury"
+      "umbrella:Umbrella Industries"
     ]
   },
   "follow_up_rules": {
@@ -656,8 +629,8 @@
       "hybrid",
       "remote"
     ],
-    "comp_floor": 80000,
-    "comp_target": 110000,
+    "comp_floor": null,
+    "comp_target": null,
     "company_stages": [
       "seed",
       "series a-b",
@@ -684,90 +657,15 @@
     ],
     "target_cities": [
       {
-        "name": "Boston",
-        "search": "Boston, MA",
+        "name": "Chicago",
+        "search": "Chicago, IL",
         "match": [
-          "boston",
-          "cambridge",
-          "somerville",
-          "brookline",
-          "newton",
-          "waltham",
-          "burlington",
-          "needham",
-          "dedham",
-          "quincy",
-          "greater boston",
-          "massachusetts",
-          "ma, us",
-          "ma, usa",
-          "ma, united states"
-        ]
-      },
-      {
-        "name": "New York City",
-        "search": "New York, NY",
-        "match": [
-          "new york",
-          "nyc",
-          "manhattan",
-          "brooklyn",
-          "queens",
-          "jersey city",
-          "hoboken",
-          "ny, us",
-          "ny, usa",
-          "ny, united states"
-        ]
-      },
-      {
-        "name": "California",
-        "search": "California",
-        "match": [
-          "california",
-          ", ca",
-          "ca, us",
-          "ca, usa",
-          "ca, united states",
-          "bay area",
-          "san francisco",
-          "sf",
-          "south san francisco",
-          "oakland",
-          "berkeley",
-          "emeryville",
-          "palo alto",
-          "menlo park",
-          "mountain view",
-          "sunnyvale",
-          "santa clara",
-          "san jose",
-          "cupertino",
-          "redwood city",
-          "san mateo",
-          "foster city",
-          "burlingame",
-          "san carlos",
-          "los gatos",
-          "milpitas",
-          "fremont",
-          "pleasanton",
-          "walnut creek",
-          "los angeles",
-          "santa monica",
-          "culver city",
-          "playa vista",
-          "el segundo",
-          "venice",
-          "pasadena",
-          "burbank",
-          "long beach",
-          "irvine",
-          "newport beach",
-          "costa mesa",
-          "san diego",
-          "sacramento",
-          "orange county"
+          "chicago",
+          "evanston",
+          "oak park",
+          "cook county",
+          "illinois",
+          "il, us"
         ]
       }
     ],

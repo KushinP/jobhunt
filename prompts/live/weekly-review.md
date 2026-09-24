@@ -12,7 +12,7 @@ STATUS NAMES. The dashboard and the API name two statuses differently: the dashb
 
 STEP 1. `get_followups`. For each application quiet past the no-response window, draft a short follow-up as a **Gmail draft only**, never sent, using the Gmail connector (the personal Gmail account). If Gmail is not connected, list the follow-ups instead. Six sentences maximum. Then `complete_followup` with the draft id.
 STEP 2. `get_metrics` and `list_goals`. Report applications this week against the goal, referral asks against the outreach goal, responses and interviews, which sources convert, and whether the score bands show a real gradient. If they are flat, say the weights are not predicting anything.
-STEP 3. `get_plan`, then report applications and interviews by plan track (Track A AI/startup ops, Track B real estate finance, Track C VC/consulting). Apply the plan's week-4 decision rule when it is due.
+STEP 3. `get_plan`, then report applications and interviews by plan track (as the plan names them). Apply the plan's week-4 decision rule when it is due.
 STEP 4. `list_pipeline` status "Complete" (the Ready column): anything built over four days ago and not sent is the real bottleneck. List those, oldest first.
 STEP 5. `list_pipeline` status New (limit 200), then again with `missing_jd` true, and report both counts. Judge the threshold only on New roles that HAVE a JD: more than 15 of those suggests the auto-queue threshold (config `thresholds.auto_generate`) is too high. Roles without a JD are a fetch backlog, not a threshold signal; report that number separately, with how many come from ZipRecruiter and Indeed.
 

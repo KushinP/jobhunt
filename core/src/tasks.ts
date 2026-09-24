@@ -271,8 +271,9 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     '',
     'STEP 2. Queued column. `list_pipeline` status "Generate" (the API name for Queued), limit 100. '
     + 'For each, `get_job` and read the title and JD. Move to "Skip" if ANY of these is clearly true:',
-    '  a. A graduation-year program for a different class than the person\'s (e.g. "2027 graduates", '
-    + '"Class of 2027"), or an internship, co-op, summer or MBA-only program.',
+    '  a. A graduation-year program for a class other than the person\'s (a title or JD saying '
+    + '"Class of" or "20XX graduates" for a year that is not theirs), or an internship, co-op, '
+    + 'summer or MBA-only program.',
     `  b. Level: the title says Senior, Sr, Manager, Lead, Principal, Director, Head or VP, or the JD `
     + `REQUIRES more than ${maxYears} years of full-time experience (a range like "1-3 years" is fine; `
     + '"3+ years required" is not).',

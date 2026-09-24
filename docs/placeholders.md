@@ -14,6 +14,9 @@ server from config, not edited by hand).
 | `{{GRADUATION_DATE}}` | application profile, education |
 | `{{GPA}}` | application profile, education |
 | `{{SUPABASE_PROJECT_ID}}` | only in legacy skill text; remove |
+| `{{COMP_FLOOR}}` | `preferences.comp_floor`: the pay a role must reach to be worth applying to |
+| `{{CITY_ROTATION}}` | built from `preferences.target_cities`: which city each weekday searches |
+| `{{TARGET_CITIES}}` | `preferences.target_cities`, as a sentence ("Boston, New York and remote") |
 
 Also removed entirely (not placeholdered): the personal plan (referral contacts, employer
 history, boundaries), the personal profile inside each skill's `reference/CLAUDE.md`, and

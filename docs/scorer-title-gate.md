@@ -8,11 +8,12 @@ config or from a scheduled run. This doc is the implementation spec for them.
 
 ## The evidence
 
-`Analyst` at **Hines**, San Francisco. Score 90. `score_breakdown`:
+`Analyst` at a large real-estate developer. Score 90. `score_breakdown`:
 title 10/20, domain 25/25, skill 20/20, seniority 20/20, location 15/15.
 JD asks for "One or more years related experience in real estate or in a
 financial analysis role", Argus and Excel DCF modelling, acquisitions and
-development, $107,100 to $123,200. A Track B bullseye.
+development, with a stated pay band well above the floor. Squarely inside one
+of the plan's tracks.
 
 `drop_reason`: **"title matches no target role."**
 
@@ -23,10 +24,11 @@ title scorer, which gave the same title 10 of 20 points rather than 0.
 ## Scale
 
 Of 60 Discarded rows sampled, about 20 were false negatives, all scoring 80 to
-90, all in a plan track: Hines Analyst and Associate, Brookfield Associate
-Housing, Greystone Bridge Lending, Wells Fargo Commercial Mortgage, Altus Group
-Advisory (they make Argus), Salient Founder's Office, Pallet GTM Strategy,
-Moody's Strategic Programs, Galvanize Venture and Growth, and five roles titled
+90, all inside a plan track: two developer analyst and associate roles, an
+affordable-housing associate, a bridge-lending analyst, a commercial-mortgage
+analyst at a bank, an advisory role at the firm that makes the industry's
+modelling software, a founder's-office role, a GTM strategy role, a strategic
+programs role at a ratings agency, a venture and growth role, and five titled
 plainly "Financial Analyst".
 
 The same scorer sent "Implementation Manager" requiring 5 to 8 years into Queued
@@ -58,7 +60,7 @@ together are below half their combined weight (currently 45, so below 22).
 ## 3. NOT APPLIED: enforce max_years_required (Worker code)
 
 `max_years_required` is already 2 and `score_breakdown` already records a
-parsed `years_required` (both Santander rows on 2026-09-23 show
+parsed `years_required` (two rows from the same bank on 2026-09-23 both showed
 `"years_required": 3`), but nothing gates on it. Roles requiring 3, 4, 6 and 10
 years still reached Queued at score 100. This was 19 of 40 Queued removals in
 one sweep.
@@ -92,9 +94,9 @@ say "our clients" routinely, and that would create false negatives.
 ## 5. NOT APPLIED: dedupe on source_job_id (Worker code)
 
 `normalized_key` is title plus company, so one posting under two company
-spellings ingests twice. On 2026-09-23 LinkedIn job 4469920249 landed as both
-"CRP Affordable Housing and Community Development" and "Castellan Real Estate
-Partners", and "Santander" / "Santander US" split into two records. Prefer
+spellings ingests twice. On 2026-09-23 a single LinkedIn posting landed twice
+under a property manager's two trading names, and a bank's name with and
+without a "US" suffix split into two records. Prefer
 `source_job_id` when present, and normalize company by stripping US, Inc, LLC,
 Corporation and Group before comparing.
 

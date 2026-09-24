@@ -25,10 +25,10 @@ HARD RULES
 STEP 1. `get_config`, `get_preferences`, `get_plan`, and `get_application_profile` (for the graduation date and work history). The plan's tracks and its "not chasing" list are the standard.
 
 STEP 2. Queued column. `list_pipeline` status "Generate" (the API name for Queued), limit 100. For each, `get_job` and read the title and JD. Move to "Skip" if ANY of these is clearly true:
-  a. A graduation-year program for a different class than the person's (e.g. "2027 graduates", "Class of 2027"), or an internship, co-op, summer or MBA-only program.
+  a. A graduation-year program for a different class than the person's (e.g. "2027 graduates", "Class of 20XX"), or an internship, co-op, summer or MBA-only program.
   b. Level: the title says Senior, Sr, Manager, Lead, Principal, Director, Head or VP, or the JD REQUIRES more than 2 years of full-time experience (a range like "1-3 years" is fine; "3+ years required" is not).
   c. Function outside every plan track: HR or HR systems, IT administration or a specific enterprise platform admin (ServiceNow, Dynamics, Salesforce admin), quota-carrying sales or partnerships, software or data engineering, accounting or audit, insurance, legal, clinical.
-  d. Location: the posting's actual work location is outside Boston, New York City and California and it is not US-remote (watch for titles naming a different city than the location field).
+  d. Location: the posting's actual work location is outside {{TARGET_CITIES}} and it is not US-remote (watch for titles naming a different city than the location field).
   e. The JD states a hard requirement the person plainly lacks: a license (CPA, Series 7/63, bar), a security clearance, a specific degree they do not hold, or a named career background (investment banking, Big 4 audit) with no alternative.
   f. Posted by a staffing or recruiting agency on behalf of an unnamed client (e.g. KTek Resourcing, ATC, Robert Half, Insight Global, TEKsystems, "our client"), unless the client is named and the role itself passes a to e.
   Fit that is merely a stretch stays.

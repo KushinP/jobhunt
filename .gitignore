@@ -1,0 +1,12 @@
+.env
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+.dev.vars
+.wrangler-shared/
+.wrangler-audit/
+# Filled-in deployment config: ids, allowed address and hostnames are yours.
+# Copy the .example.jsonc files and edit.
+mcp/wrangler.jsonc
+dash/wrangler.jsonc

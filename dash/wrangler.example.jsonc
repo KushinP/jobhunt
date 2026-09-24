@@ -1,0 +1,31 @@
+// Copy to wrangler.jsonc and fill in. setup-cloudflare.sh creates the D1 database and
+// KV namespace and prints their ids; the Worker names decide your *.workers.dev hostnames.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "job",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "vars": {
+    // The client id is public by design (it appears in the sign-in URL).
+    // The client SECRET is a Worker secret, never in this file.
+    "GOOGLE_CLIENT_ID": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "ALLOWED_EMAIL": "you@example.com",
+    "PUBLIC_MCP_URL": "https://mcp.YOUR-SUBDOMAIN.workers.dev"
+  },
+
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Without this, a browser NAVIGATION (Sec-Fetch-Mode: navigate) to /api/auth/start is
+    // answered by the SPA fallback before the Worker runs, so the sign-in redirect never
+    // happens. curl does not reproduce it, because curl does not send that header.
+    "run_worker_first": ["/api/*", "/doc/*"]
+  },
+
+  // database_id is filled in by setup-cloudflare.sh.
+  "d1_databases": [{ "binding": "DB", "database_name": "jobhunt", "database_id": "YOUR_D1_DATABASE_ID" }],
+}

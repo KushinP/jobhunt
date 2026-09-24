@@ -1,0 +1,13 @@
+{
+  "name": "@jobhunt/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
+    "@jobhunt/core": "*",
+    "@modelcontextprotocol/sdk": "1.23.0",
+    "agents": "^0.2.0",
+    "zod": "^3.24.0"
+  }
+}

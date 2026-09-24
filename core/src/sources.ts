@@ -1,0 +1,217 @@
+/**
+ * Every platform someone might want searched, with an honest account of how it is
+ * reached and what it takes to turn on. Onboarding reads this to guide setup, so a
+ * platform that is not supported says so instead of quietly returning nothing.
+ */
+export interface SourceDef {
+  id: string;
+  name: string;
+  /** browser: read on demand by Claude in Chrome from the person's own logged-in browser,
+   * with the job-extract skill. It runs when asked, not on the cloud schedule. */
+  status: 'built_in' | 'connector' | 'api_key' | 'browser' | 'planned' | 'unsupported';
+  how: string;
+  setup: string[];
+  cost: string;
+  /** the MCP tool or connector tool a search run calls */
+  search_with?: string;
+  notes?: string;
+}
+
+export const SOURCES: SourceDef[] = [
+  {
+    id: 'company_boards',
+    name: 'Company career boards (Greenhouse, Lever, Ashby)',
+    status: 'built_in',
+    how: 'Built into the JobHunt connector. Reads each company\'s own public job board.',
+    setup: ['Name the companies you want watched; their board slugs are saved with put_config "target_boards".'],
+    cost: 'Free',
+    search_with: 'search_company_boards',
+    notes: 'The freshest and least contested source: postings appear here before the aggregators.',
+  },
+  {
+    id: 'yc',
+    name: 'Y Combinator startups (Work at a Startup)',
+    status: 'built_in',
+    how: 'Built into the JobHunt connector. Reads YC\'s public job board by role and city, '
+      + 'keeps postings whose title matches a target archetype, and fetches their full descriptions.',
+    setup: [],
+    cost: 'Free',
+    search_with: 'search_yc_jobs',
+    notes: 'Strong for BizOps, chief of staff, strategy and operations, and deployment roles at '
+      + 'early-stage companies. YC\'s public pages show its most active postings, not every one; '
+      + 'the full list at workatastartup.com needs a login this does not use.',
+  },
+  {
+    id: 'indeed',
+    name: 'Indeed',
+    status: 'api_key',
+    how: 'Through an Apify scraper (valig/indeed-jobs-scraper), called by the JobHunt connector '
+      + 'with the same APIFY_TOKEN as LinkedIn. Claude\'s own Indeed connector failed to connect '
+      + 'on 2026-09-18, so it is no longer used.',
+    setup: [
+      'Uses the APIFY_TOKEN already set for LinkedIn; nothing else to install.',
+    ],
+    cost: 'About $0.0001 per result on Apify, so well under a cent a search.',
+    search_with: 'search_indeed',
+    notes: 'Returns the full description and the employer\'s own apply URL.',
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn Jobs',
+    status: 'api_key',
+    how: 'Through an Apify scraper (valig/linkedin-jobs-scraper), called by the JobHunt connector '
+      + 'with an Apify API token.',
+    setup: [
+      'Create an Apify account and copy an API token from Settings, Integrations.',
+      'Set it on the JobHunt server as APIFY_TOKEN (the owner runs: wrangler secret put APIFY_TOKEN).',
+    ],
+    cost: 'About $0.0004 per result on Apify, roughly a cent a search.',
+    search_with: 'search_linkedin',
+    notes: 'LinkedIn has no job-search API, and scrapers break when LinkedIn changes its pages.',
+  },
+  {
+    id: 'builtin',
+    name: 'Built In (Built In Boston, NYC, SF)',
+    status: 'api_key',
+    how: 'Through an Apify scraper (solidcode/builtin-scraper) with the same APIFY_TOKEN, '
+      + 'filtered to entry-level and junior roles.',
+    setup: ['Uses the APIFY_TOKEN already set for LinkedIn.'],
+    cost: 'About $0.001 per result on Apify.',
+    search_with: 'search_builtin',
+    notes: 'Tech and startup employers; strongest for BizOps, strategy and AI roles.',
+  },
+  {
+    id: 'ziprecruiter',
+    name: 'ZipRecruiter',
+    status: 'connector',
+    how: 'Through Claude\'s ZipRecruiter connector, called directly by the scheduled search.',
+    setup: [
+      'In Claude: Settings, Connectors, browse the directory, add "ZipRecruiter".',
+      'No account or key needed.',
+    ],
+    cost: 'Free',
+    search_with: 'search_jobs (ZipRecruiter connector)',
+  },
+  {
+    id: 'dice',
+    name: 'Dice',
+    status: 'connector',
+    how: 'Through Claude\'s Dice connector. Tech roles only, so the search runs it for the '
+      + 'technical archetypes rather than the whole query set.',
+    setup: [
+      'In Claude: Settings, Connectors, browse the directory, add "Dice".',
+      'No account or key needed.',
+    ],
+    cost: 'Free',
+    search_with: 'search_jobs (Dice connector)',
+    notes: 'Useful for AI implementation, solutions and technology consulting roles; noise for finance and real estate.',
+  },
+  {
+    id: 'manual',
+    name: 'Roles you add yourself',
+    status: 'built_in',
+    how: 'The dashboard\'s Add role button, or the add_role tool in any chat.',
+    setup: [],
+    cost: 'Free',
+    notes: 'Referrals and roles found while browsing, which no scraper will see.',
+  },
+  {
+    id: 'handshake',
+    name: 'Handshake',
+    status: 'browser',
+    how: 'Read by Claude in Chrome from your own logged-in Handshake, on demand, with the '
+      + 'job-extract skill: it searches or reads the page you point at, saves the matching '
+      + 'roles and opens only those to pull their full descriptions. Handshake has no student '
+      + 'API, so this runs when you ask (Mac and Chrome open), not on the cloud schedule.',
+    setup: [
+      'Install Claude in Chrome and sign in with the same Claude account.',
+      'Install the job-extract skill (in Claude Code it is in ~/.claude/skills; on claude.ai, upload job-extract.zip under Skills).',
+      'Log in to the site yourself in Chrome. Claude never enters a password.',
+      'Then ask Claude, for example: "pull strategy and operations jobs from Handshake" or "save the jobs on this page to JobHunt".',
+    ],
+    cost: 'Free',
+    notes: 'Read at a person\'s pace and only the pages you ask for. Automated reading of a '
+      + 'logged-in site can be against its terms; this stays on demand for that reason.',
+  },
+  {
+    id: 'wellfound',
+    name: 'Wellfound (AngelList)',
+    status: 'browser',
+    how: 'No public API, so Claude in Chrome reads your search results with the job-extract '
+      + 'skill, on demand. Many startups there also run an Ashby, Greenhouse or Lever board; '
+      + 'adding those as company boards gets them daily without the browser.',
+    setup: [
+      'Install Claude in Chrome and sign in with the same Claude account.',
+      'Install the job-extract skill (in Claude Code it is in ~/.claude/skills; on claude.ai, upload job-extract.zip under Skills).',
+      'Log in to the site yourself in Chrome. Claude never enters a password.',
+      'Then ask Claude, for example: "pull strategy and operations jobs from Handshake" or "save the jobs on this page to JobHunt".',
+    ],
+    cost: 'Free',
+  },
+  {
+    id: 'browser',
+    name: 'Any job page in your browser',
+    status: 'browser',
+    how: 'Point Claude in Chrome at any search results page or posting (LinkedIn, Indeed, '
+      + 'Wellfound, a company careers page) and the job-extract skill saves the roles on it. '
+      + 'Also the way in for sites that block automated reading, such as Indeed.',
+    setup: [
+      'Install Claude in Chrome and sign in with the same Claude account.',
+      'Install the job-extract skill (in Claude Code it is in ~/.claude/skills; on claude.ai, upload job-extract.zip under Skills).',
+      'Log in to the site yourself in Chrome. Claude never enters a password.',
+      'Then ask Claude, for example: "pull strategy and operations jobs from Handshake" or "save the jobs on this page to JobHunt".',
+    ],
+    cost: 'Free',
+  },
+  {
+    id: 'linkedin_alerts',
+    name: 'LinkedIn job-alert emails',
+    status: 'connector',
+    how: 'The daily search reads LinkedIn\'s own job-alert emails from the last three days through '
+      + 'Claude\'s Gmail connector and saves every job in them (source "linkedin_email"); the server '
+      + 'scores them like any other find. It only reads: nothing is marked, archived or answered.',
+    setup: [
+      'On LinkedIn, save the searches you want and turn on email alerts, sent to the address you apply from.',
+      'In Claude: Settings, Connectors, add Gmail, signed in to that address.',
+    ],
+    cost: 'Free',
+    search_with: 'search_threads and get_thread (Gmail connector)',
+    notes: 'Catches postings the LinkedIn scraper\'s window misses, with no scraping at all. The '
+      + 'alerts carry no description, so their roles wait for the JD pass.',
+  },
+  {
+    id: 'email_alerts',
+    name: 'Other job-alert emails (Indeed, ZipRecruiter, Handshake)',
+    status: 'planned',
+    how: 'Not built yet. Would parse those sites\' saved-search alert emails through the Gmail '
+      + 'connector, the way LinkedIn\'s already are.',
+    setup: [],
+    cost: 'Free',
+  },
+];
+
+/** Connectors that power features rather than searches. */
+export const FEATURE_CONNECTORS = [
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    for: 'Monday follow-up drafts (drafts only, never sent)',
+    setup: 'In Claude: Settings, Connectors, add Gmail.',
+  },
+  {
+    id: 'chrome',
+    name: 'Claude in Chrome',
+    for: 'Auto-filling application forms, and reading jobs from browser-only platforms with the job-extract skill',
+    setup: 'Install the Claude in Chrome extension and sign in with the same Claude account.',
+  },
+  {
+    id: 'cowork',
+    name: 'Claude Cowork scheduled tasks',
+    for: 'The four scheduled runs (search, sweep, build, weekly review). They run in the cloud, with the computer off.',
+    setup: 'In Cowork: Scheduled, New task, Set up manually, with the prompts from the dashboard (Setup, Connect Claude).',
+  },
+];
+
+export function sourceById(id: string): SourceDef | undefined {
+  return SOURCES.find((s) => s.id === id);
+}

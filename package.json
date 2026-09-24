@@ -1,0 +1,32 @@
+{
+  "name": "jobhunt",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "core",
+    "mcp",
+    "dash"
+  ],
+  "scripts": {
+    "test": "node --test core/test/*.test.js",
+    "typecheck": "tsc -b core mcp dash",
+    "db:migrate:local": "wrangler d1 migrations apply jobhunt --local --persist-to .wrangler-shared --config mcp/wrangler.jsonc",
+    "db:migrate:remote": "wrangler d1 migrations apply jobhunt --remote --config mcp/wrangler.jsonc",
+    "dev:mcp": "wrangler dev --config mcp/wrangler.jsonc --local --persist-to .wrangler-shared --port 8788 --ip 127.0.0.1 --inspector-port 9229",
+    "dev:dash": "wrangler dev --config dash/wrangler.jsonc --local --persist-to .wrangler-shared --port 8787 --ip 127.0.0.1 --inspector-port 9230",
+    "dev:web": "npm --prefix dash/web run dev",
+    "build:web": "npm --prefix dash/web run build",
+    "deploy:mcp": "wrangler deploy --config mcp/wrangler.jsonc",
+    "deploy:dash": "npm run build:web && wrangler deploy --config dash/wrangler.jsonc",
+    "e2e": "python3 ../docs/e2e_mcp.py && python3 ../docs/e2e_dash.py"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260917.1",
+    "@types/node": "^26.6.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.134.0"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": "1.23.0"
+  }
+}

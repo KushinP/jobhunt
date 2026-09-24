@@ -1,0 +1,37 @@
+// Copy to wrangler.jsonc and fill in. setup-cloudflare.sh creates the D1 database and
+// KV namespace and prints their ids; the Worker names decide your *.workers.dev hostnames.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "vars": {
+    // The client id is public by design (it appears in the sign-in URL).
+    // The client SECRET is a Worker secret, never in this file.
+    "GOOGLE_CLIENT_ID": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "ALLOWED_EMAIL": "you@example.com",
+    "PUBLIC_DASH_URL": "https://job.YOUR-SUBDOMAIN.workers.dev",
+    "PUBLIC_MCP_URL": "https://mcp.YOUR-SUBDOMAIN.workers.dev"
+  },
+
+  // `agents` dynamically imports the Vercel AI SDK on its MCP client path, which this
+  // server never uses. Stubbed rather than bundling the dependency.
+  "alias": { "ai": "./src/stub-ai.ts" },
+
+  // database_id and the KV id are filled in by setup-cloudflare.sh.
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "jobhunt",
+    "database_id": "YOUR_D1_DATABASE_ID",
+    "migrations_dir": "../migrations"
+  }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "YOUR_KV_NAMESPACE_ID" }],
+
+  "durable_objects": {
+    "bindings": [{ "name": "JOBHUNT_MCP", "class_name": "JobHuntMCP" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["JobHuntMCP"] }]
+}

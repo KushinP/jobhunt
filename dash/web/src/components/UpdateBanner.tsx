@@ -34,3 +34,24 @@ export function UpdateBanner() {
     </div>
   );
 }
+
+/**
+ * Installed on a phone, the app opens from its own cache with no network at all, so it has to
+ * say why the screens are empty rather than look broken.
+ */
+export function OfflineBanner() {
+  const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+  if (!offline) return null;
+  return (
+    <p role="status" className="mb-4 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
+      Offline. JobHunt opened from this device, but roles, documents and outreach need a connection.
+    </p>
+  );
+}

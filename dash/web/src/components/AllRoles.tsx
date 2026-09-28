@@ -116,7 +116,7 @@ export function AllRoles({ search, only, onClearOnly }: {
   // Fills the window like the board: filters take the height they need and the table scrolls
   // inside what is left, both ways, so the page itself never scrolls.
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       {only ? (
         <div className="mb-3 flex shrink-0 items-center gap-2">
           <span className="rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs">
@@ -180,7 +180,38 @@ export function AllRoles({ search, only, onClearOnly }: {
           {!only && f.scope !== 'all' && ' Try Everything.'}
         </Empty>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-line">
+        <>
+        {/* A phone gets cards: the same rows in the same order, without sideways scrolling. */}
+        <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain sm:hidden">
+          {rows.slice(0, shown).map((j) => (
+            <li key={j.id}>
+              <button type="button" onClick={() => nav.openJob(j.id)}
+                className="w-full rounded-xl border border-line bg-panel px-3 py-2.5 text-left">
+                <span className="flex items-start justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="line-clamp-2 text-sm font-medium leading-snug">{j.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-muted">
+                      {j.company_priority === 'target' ? '★ ' : ''}{j.company}
+                      {j.location ? ` · ${j.location}` : ''}
+                    </span>
+                  </span>
+                  <ScoreBadge score={j.score} />
+                </span>
+                <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                  <span className="text-fg">{statusLabel(j.status)}</span>
+                  <OutreachBadge value={j.outreach_status} />
+                  {j.salary && <span className="tabular-nums">{j.salary}</span>}
+                  {j.closes_at && <Closes at={j.closes_at} source={j.closes_source} />}
+                  <span className="ml-auto">
+                    {j.applied_at ? `applied ${shortDate(j.applied_at)}` : `found ${shortDate(j.created_at)}`}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <div className="hidden min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-line sm:block">
           <table className="w-max min-w-full text-sm">
             <thead className="sticky top-0 z-[2] bg-panel">
               <tr>
@@ -245,6 +276,7 @@ export function AllRoles({ search, only, onClearOnly }: {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <div className="mt-2 flex shrink-0 flex-wrap items-center gap-3 text-xs text-muted">

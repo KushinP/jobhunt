@@ -96,14 +96,15 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   const select = 'rounded-md border border-line bg-panel px-2 py-1 text-xs font-medium outline-none focus:border-accent';
 
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-muted">
         <span>
           <span className="pointer-coarse:hidden">Drag a card to another column to move it.</span>
           <span className="hidden pointer-coarse:inline">Open a role to move it.</span>
         </span>
         <label className="flex items-center gap-1.5">
-          Sort the other columns
+          <span className="hidden sm:inline">Sort the other columns</span>
+          <span className="sm:hidden">Sort</span>
           <select value={presetFor(prefs.sort) || 'best'} className={select} aria-label="Sort cards"
             onChange={(e) => {
               const p = BOARD_PRESETS.find((x) => x.key === e.target.value);

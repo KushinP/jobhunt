@@ -71,6 +71,14 @@ mismatches before they cost a document), **build** (write resume and cover lette
 survived), and on Mondays a **weekly review** (follow-up drafts, what is stuck, what the
 numbers say).
 
+## On a phone
+
+The dashboard is a progressive web app: open it in Safari or Chrome, add it to the Home screen,
+and it opens full screen with its own icon. A service worker caches the app shell only, so it
+starts instantly and says plainly when it is offline; nothing from the API is ever stored on the
+device. The board swipes between columns, the roles table becomes a card list, and the role
+panel is a full-screen sheet.
+
 ## Running costs
 
 - **Cloudflare**: Workers, D1 and KV, within the free tier for one person's search.

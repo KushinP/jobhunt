@@ -71,7 +71,7 @@ export function Outreach() {
   const select = 'rounded-md border border-line bg-panel px-2 py-1 text-xs outline-none focus:border-accent';
 
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       {/* what the numbers say, and whether this is working at all */}
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-line bg-panel px-3 py-2 text-xs">
         <span><b className="tabular-nums">{sentThisWeek}</b> sent this week</span>

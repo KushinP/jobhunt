@@ -11,7 +11,7 @@ const NONE = '__none';
 export function Companies({ search }: { search: string }) {
   // Fills the window like the board: the table scrolls inside, the page never does.
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       <CompaniesTable search={search} />
     </div>
   );

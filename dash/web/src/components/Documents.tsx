@@ -71,7 +71,7 @@ export function Documents({ search }: { search: string }) {
   });
 
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1">
           {([['all', `All (${resumes + letters})`], ['resume', `Resumes (${resumes})`], ['cover_letter', `Cover letters (${letters})`]] as const)

@@ -17,16 +17,22 @@ import { Trash } from './components/Trash.tsx';
 import { Documents } from './components/Documents.tsx';
 import { CompanyPanel } from './components/CompanyPanel.tsx';
 import { NavContext } from './components/nav.tsx';
-import { UpdateBanner } from './components/UpdateBanner.tsx';
+import { OfflineBanner, UpdateBanner } from './components/UpdateBanner.tsx';
 
 type Tab = 'board' | 'list' | 'companies' | 'outreach' | 'documents' | 'trash' | 'followups' | 'metrics' | 'runs' | 'evidence' | 'setup';
+
+const TABS: string[] = ['board', 'list', 'companies', 'outreach', 'documents', 'trash', 'followups', 'metrics', 'runs', 'evidence', 'setup'];
 
 /** Tabs the header search filters directly; anywhere else, Enter takes the search to All roles. */
 const SEARCHABLE: Tab[] = ['board', 'list', 'companies', 'documents'];
 
 export default function App() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('board');
+  // The home-screen shortcuts open a tab directly (/?tab=outreach), so the app has to honour it.
+  const [tab, setTab] = useState<Tab>(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    return (wanted && TABS.includes(wanted as Tab) ? wanted : 'board') as Tab;
+  });
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [adding, setAdding] = useState(false);
@@ -73,8 +79,8 @@ export default function App() {
   return (
     <NavContext.Provider value={nav}>
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:mb-5">
+        <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">JobHunt</h1>
           <p className="text-xs text-muted">
             {ready > 0
@@ -82,7 +88,7 @@ export default function App() {
               : 'Nothing waiting on you right now'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="order-3 flex w-full items-center gap-2 sm:order-none sm:w-auto">
           <input
             type="search"
             value={search}
@@ -91,20 +97,20 @@ export default function App() {
               if (e.key === 'Enter' && !SEARCHABLE.includes(tab)) { setOnly(null); setTab('list'); }
             }}
             placeholder={SEARCHABLE.includes(tab) ? 'Search role, company, city' : 'Search roles (Enter)'}
-            className="w-44 rounded-lg border border-line bg-panel px-3 py-1.5 text-sm
-                       outline-none focus:border-accent sm:w-56"
+            className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 py-1.5 text-sm
+                       outline-none focus:border-accent sm:w-56 sm:flex-none"
           />
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-white"
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white"
           >
             Add role
           </button>
           <button
             type="button"
             onClick={async () => { await api.logout(); void qc.invalidateQueries(); }}
-            className="rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted
+            className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted
                        hover:border-accent hover:text-fg"
           >
             Sign out
@@ -113,6 +119,7 @@ export default function App() {
       </header>
 
       <UpdateBanner />
+      <OfflineBanner />
 
       <nav className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => (

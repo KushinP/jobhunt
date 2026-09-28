@@ -97,7 +97,7 @@ export function AddRole({ onClose }: { onClose: () => void }) {
         className="fixed inset-0 z-30 bg-black/25" />
       <div className="fixed left-1/2 top-8 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2
                       overflow-y-auto rounded-2xl border border-line bg-bg p-5 shadow-xl
-                      sm:p-6" style={{ maxHeight: 'calc(100dvh - 4rem)' }}>
+                      sm:p-6" style={{ maxHeight: 'calc(100dvh - 4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Add a role</h2>

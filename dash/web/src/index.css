@@ -27,6 +27,34 @@
 }
 
 html, body, #root { height: 100%; }
+
+/* Installed on a phone, the app owns the whole screen: keep content clear of the notch and
+   the home indicator, and stop the page rubber-banding like a web page. */
+#root {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+
+/* The tabs that fill the window: everything scrolls inside them, never the page itself.
+   The safe-area insets come off the height, or the last row hides under the home indicator. */
+.app-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  height: calc(100dvh - 13rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+@media (min-width: 640px) {
+  .app-pane { height: calc(100dvh - 10.25rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+}
+
+@media (pointer: coarse) {
+  /* iOS zooms the page when a field under 16px takes focus, and never zooms back out. */
+  input, select, textarea { font-size: 16px; }
+  /* A finger needs more than a mouse does. */
+  button, select, [role="button"] { min-height: 2.25rem; }
+  .tap-tight { min-height: 0; }
+}
 body {
   margin: 0;
   background: var(--color-bg);

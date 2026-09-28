@@ -1,0 +1,22 @@
+{
+  "name": "JobHunt",
+  "short_name": "JobHunt",
+  "description": "Your job search: the board, every role, outreach and the documents built for you.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#191817",
+  "theme_color": "#191817",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Pipeline", "url": "/?tab=board" },
+    { "name": "Due today", "url": "/?tab=outreach" },
+    { "name": "All roles", "url": "/?tab=list" }
+  ]
+}

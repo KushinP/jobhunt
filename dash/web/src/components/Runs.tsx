@@ -111,7 +111,7 @@ export function Runs() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col sm:h-[calc(100dvh-10.25rem)]">
+    <div className="app-pane">
       <div className="mb-3 grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
         {(['search', 'sweep', 'build', 'weekly'] as const).map((k) => {
           const last = runs.find((x) => x.kind === k);

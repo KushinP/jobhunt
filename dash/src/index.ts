@@ -6,6 +6,7 @@ import {
   deleteEvidence, evidenceSummary, listEvidence, savePreferences, setEvidenceStatus,
   upsertEvidence, SOURCES, FEATURE_CONNECTORS, resolvePosting, boardNames, buildOnePrompt, normalizeKey, deleteDocument,
   getCompany, upsertCompany, INDUSTRIES, STAGES, forbiddenProfileField, scheduledTaskPrompts, toIsoDate, CONFIRMABLE_STEPS, confirmSetupStep,
+  listOutreach, logOutreach, outreachDue, outreachMetrics, updateOutreach, OUTREACH_STATUS_SQL, OutreachRuleError,
   type EvidenceInput, type GoalKind, type JobStatus,
 } from '@jobhunt/core';
 import {
@@ -223,6 +224,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         `SELECT id, title, company, location, salary, url, source, score, score_breakdown,
                 archetype, status, created_at, applied_at, next_interview_at, interview_count,
                 status_changed_at, posted_at, closes_at, closes_source,
+                ${OUTREACH_STATUS_SQL('v_pipeline.id')} AS outreach_status,
                 resume_count, cl_count, followups_due, drop_reason, rating, rating_gap,
                 c.industry AS company_industry, c.stage AS company_stage,
                 COALESCE(c.priority, 'neutral') AS company_priority
@@ -390,6 +392,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const j = job as { id: string; title: string; company: string };
     return json({
       job, documents: docs.results, history: history.results, interviews: ivs.results,
+      outreach: await listOutreach(env.DB, { job_id: id, limit: 50 }),
       build_prompt: buildOnePrompt({ id: j.id, title: j.title, company: j.company }),
     });
   }
@@ -475,7 +478,46 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       calibration: calib.results,
       rating_calibration: ratingCalib.results,
       agreement,
+      outreach: await outreachMetrics(env.DB),
     });
+  }
+
+  // Outreach. Every write here is a person clicking a button, so the actor is always "you";
+  // the cadence rules are checked in core, the same as they are for the connector.
+  if (pathname === '/api/outreach' && method === 'GET') {
+    const p = url.searchParams;
+    return json(await listOutreach(env.DB, {
+      status: (p.get('status') ?? undefined) as never,
+      job_id: p.get('job_id') ?? undefined,
+      company: p.get('company') ?? undefined,
+      since_days: p.get('since_days') ? Number(p.get('since_days')) : undefined,
+      limit: Math.min(Number(p.get('limit')) || 200, 200),
+    }));
+  }
+
+  if (pathname === '/api/outreach' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await logOutreach(env.DB, body as never), { status: 201 });
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (pathname === '/api/outreach/due' && method === 'GET') {
+    return json(await outreachDue(env.DB));
+  }
+
+  if (seg[1] === 'outreach' && seg[2] && method === 'POST') {
+    const body = await request.json().catch(() => ({})) as {
+      status?: string; notes?: string; body?: string; follow_up_due?: string | null;
+    };
+    try {
+      return json(await updateOutreach(env.DB, seg[2], body as never, 'you'));
+    } catch (e) {
+      const known = e instanceof OutreachRuleError;
+      return bad(e instanceof Error ? e.message : String(e), known ? 409 : 400);
+    }
   }
 
   if (pathname === '/api/followups' && method === 'GET') {

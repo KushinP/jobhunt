@@ -17,5 +17,6 @@ export * from './onboarding.ts';
 export * from './posting.ts';
 export * from './jds.ts';
 export * from './uploads.ts';
+export * from './outreach.ts';
 export * from './companies.ts';
 export * from './profile.ts';

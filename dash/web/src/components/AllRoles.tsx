@@ -5,6 +5,7 @@ import {
   ACTIVE_STATUSES, Closes, Empty, ScoreBadge, STATUS_LABEL, TRASH_STATUSES, shortDate, statusLabel,
 } from './bits.tsx';
 import { CompanyLink, useNav } from './nav.tsx';
+import { OutreachBadge } from './bits.tsx';
 import { Stars } from './Stars.tsx';
 import {
   SORT_PRESETS, type Sort, type SortKey, firstDirection, presetFor, sortJobs, usePersisted,
@@ -216,7 +217,10 @@ export function AllRoles({ search, only, onClearOnly }: {
                   <td className="max-w-[11rem] px-3 py-2 text-xs group-hover:bg-panel">
                     <span className="line-clamp-2" title={j.location ?? ''}>{j.location || <span className="text-muted">-</span>}</span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-xs group-hover:bg-panel">{statusLabel(j.status)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs group-hover:bg-panel">
+                    {statusLabel(j.status)}
+                    <OutreachBadge value={j.outreach_status} />
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-muted group-hover:bg-panel">{shortDate(j.created_at)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs group-hover:bg-panel">
                     {j.applied_at ? shortDate(j.applied_at) : <span className="text-muted">-</span>}

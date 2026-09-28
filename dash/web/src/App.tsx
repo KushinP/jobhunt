@@ -5,6 +5,7 @@ import { Login } from './components/Login.tsx';
 import { Board } from './components/Board.tsx';
 import { AllRoles } from './components/AllRoles.tsx';
 import { Companies } from './components/Companies.tsx';
+import { Outreach } from './components/Outreach.tsx';
 import { AddRole } from './components/AddRole.tsx';
 import { JobDrawer } from './components/JobDrawer.tsx';
 import { Metrics } from './components/Metrics.tsx';
@@ -18,7 +19,7 @@ import { CompanyPanel } from './components/CompanyPanel.tsx';
 import { NavContext } from './components/nav.tsx';
 import { UpdateBanner } from './components/UpdateBanner.tsx';
 
-type Tab = 'board' | 'list' | 'companies' | 'documents' | 'trash' | 'followups' | 'metrics' | 'runs' | 'evidence' | 'setup';
+type Tab = 'board' | 'list' | 'companies' | 'outreach' | 'documents' | 'trash' | 'followups' | 'metrics' | 'runs' | 'evidence' | 'setup';
 
 /** Tabs the header search filters directly; anywhere else, Enter takes the search to All roles. */
 const SEARCHABLE: Tab[] = ['board', 'list', 'companies', 'documents'];
@@ -52,6 +53,7 @@ export default function App() {
     { key: 'board', label: 'Pipeline' },
     { key: 'list', label: 'All roles' },
     { key: 'companies', label: 'Companies' },
+    { key: 'outreach', label: 'Outreach' },
     { key: 'documents', label: 'Documents' },
     { key: 'trash', label: 'Trash' },
     { key: 'followups', label: 'Follow-ups', badge: due },
@@ -138,6 +140,7 @@ export default function App() {
         <AllRoles search={search} only={only} onClearOnly={() => setOnly(null)} />
       )}
       {tab === 'companies' && <Companies search={search} />}
+      {tab === 'outreach' && <Outreach />}
       {tab === 'documents' && <Documents search={search} />}
       {tab === 'trash' && <Trash onOpen={setOpenId} />}
       {tab === 'followups' && <FollowUps />}

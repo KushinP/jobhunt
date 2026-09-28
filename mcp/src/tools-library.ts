@@ -45,7 +45,7 @@ export function registerLibraryTools(server: McpServer, env: Env): void {
       + 'counts, the sources that failed or were unavailable, and errors. Use it to see whether '
       + 'a source has been quietly broken.',
     inputSchema: {
-      kind: z.enum(['search', 'build_docs', 'weekly', 'followups', 'autofill', 'manual']).optional(),
+      kind: z.enum(['search', 'build_docs', 'weekly', 'followups', 'autofill', 'manual', 'outreach']).optional(),
       limit: z.number().int().min(1).max(60).default(14),
     },
   }, async ({ kind, limit }) => {

@@ -6,6 +6,7 @@ import { registerSourceTools } from './tools-sources.ts';
 import { registerSetupTools } from './tools-setup.ts';
 import { registerEvidenceTools } from './tools-evidence.ts';
 import { registerLibraryTools } from './tools-library.ts';
+import { registerOutreachTools } from './tools-outreach.ts';
 import { fail } from './env.ts';
 
 export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
@@ -38,6 +39,10 @@ export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
         + 'rating, never yours. Never submit an application and never send an email: Gmail is for '
         + 'drafts only.',
       '',
+      'OUTREACH. log_outreach records a message the person will send themselves; update_outreach '
+        + 'records what happened, and Sent, Accepted, Replied and Meeting need their own words. '
+        + 'get_outreach_due says what is owed today. Nothing in JobHunt sends, connects or posts.',
+      '',
       'DOCUMENTS. No em dashes; date ranges MM/YYYY - MM/YYYY.',
     ].join('\n'),
   });
@@ -60,5 +65,6 @@ export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
     registerSetupTools(this.server, this.env);
     registerEvidenceTools(this.server, this.env);
     registerLibraryTools(this.server, this.env);
+    registerOutreachTools(this.server, this.env);
   }
 }

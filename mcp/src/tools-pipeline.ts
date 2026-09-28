@@ -5,6 +5,7 @@ import {
   addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, saveDocument,
   setRating, setStatus, resolvePosting, boardNames, statusSetBy, fetchMissingJds,
   startUpload, addChunk, uploadInstructions, UploadError, CHUNK_CHARS, docLink,
+  OUTREACH_STATUS_SQL, outreachMetrics,
 } from '@jobhunt/core';
 import type { JobStatus } from '@jobhunt/core';
 import { type Env, fail, ok } from './env.ts';
@@ -95,7 +96,8 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     description: 'Browse the pipeline with optional filters. Use for questions like "what is '
       + 'waiting on me" or "what did we find today". `status_set_by` says who put each role in its '
       + 'current status: "you" (the person, whose call automation must not undo), "automation", or '
-      + 'null when the scorer set it on arrival.',
+      + 'null when the scorer set it on arrival. `outreach_status` is the most advanced touch '
+      + 'logged for the role: none, drafted, sent or replied.',
     inputSchema: {
       status: STATUS.optional(),
       min_score: z.number().int().optional(),
@@ -104,10 +106,14 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
         .describe('only roles still waiting for their job description'),
       company: z.string().optional().describe('exact company name'),
       q: z.string().optional().describe('text to find in the title, company or location'),
+      min_rating: z.number().int().min(1).max(5).optional()
+        .describe("only roles the person rated this or higher"),
+      outreach: z.enum(['none', 'drafted', 'sent', 'replied']).optional()
+        .describe('by the most advanced touch logged for the role: none, drafted, sent, or replied'),
       limit: z.number().int().min(1).max(200).default(50),
       offset: z.number().int().min(0).default(0).describe('skip this many rows, to page past the first 200'),
     },
-  }, async ({ status, min_score, since_days, missing_jd, company, q, limit, offset }) => {
+  }, async ({ status, min_score, since_days, missing_jd, company, q, min_rating, outreach, limit, offset }) => {
     const where: string[] = [];
     const binds: unknown[] = [];
     if (status) { where.push('status = ?'); binds.push(status); }
@@ -118,12 +124,15 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     if (missing_jd) where.push("(jd_text IS NULL OR length(jd_text) < 800)");
     if (company) { where.push('company = ?'); binds.push(company); }
     if (q) { where.push('(title LIKE ? OR company LIKE ? OR location LIKE ?)'); binds.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    if (min_rating != null) { where.push('rating >= ?'); binds.push(min_rating); }
+    if (outreach) { where.push(`${OUTREACH_STATUS_SQL('v_pipeline.id')} = ?`); binds.push(outreach); }
     const sql = `SELECT id, title, company, location, salary, url, source, source_job_id, score, rating,
                         archetype, status, status_changed_at, created_at, applied_at, next_interview_at,
                         closes_at, closes_source, resume_count, cl_count,
                         (SELECT CASE WHEN h.actor = 'automation' THEN 'automation' ELSE 'you' END
                            FROM status_history h WHERE h.job_id = v_pipeline.id AND h.to_status = v_pipeline.status
-                           ORDER BY h.id DESC LIMIT 1) AS status_set_by
+                           ORDER BY h.id DESC LIMIT 1) AS status_set_by,
+                        ${OUTREACH_STATUS_SQL('v_pipeline.id')} AS outreach_status
                  FROM v_pipeline
                  ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY score DESC, created_at DESC LIMIT ? OFFSET ?`;
@@ -575,21 +584,24 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
   });
 
   server.registerTool('get_metrics', {
-    description: 'Funnel health: weekly activity, performance by source, and whether the score '
-      + 'actually predicts interviews. If the calibration table is flat, the weights are '
-      + 'decoration and should be retuned.',
+    description: 'Funnel health: weekly activity, performance by source, whether the score '
+      + 'actually predicts interviews, and outreach (accept and reply rates, which hooks and '
+      + 'which kinds of contact answer, and whether applying with outreach interviews better than '
+      + 'applying without). If the calibration table is flat, the weights are decoration and '
+      + 'should be retuned. A true `outreach.warning` means the messages are not working.',
     inputSchema: {},
   }, async () => {
-    const [weekly, sources, calib, counts] = await Promise.all([
+    const [weekly, sources, calib, counts, outreach] = await Promise.all([
       env.DB.prepare('SELECT * FROM v_weekly_activity LIMIT 12').all(),
       env.DB.prepare('SELECT * FROM v_source_performance').all(),
       env.DB.prepare('SELECT * FROM v_score_calibration').all(),
       env.DB.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status').all(),
+      outreachMetrics(env.DB),
     ]);
     return ok({
       by_status: counts.results, weekly: weekly.results,
-      by_source: sources.results, score_calibration: calib.results,
-    });
+      by_source: sources.results, score_calibration: calib.results, outreach,
+    }, outreach.warning ? outreach.warning_text : undefined);
   });
 
   server.registerTool('get_followups', {

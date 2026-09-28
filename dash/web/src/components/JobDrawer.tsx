@@ -5,6 +5,7 @@ import { Breakdown, Closes, ScoreBadge, STATUSES, shortDate, statusLabel } from 
 import { CompanyLink } from './nav.tsx';
 import { Stars } from './Stars.tsx';
 import { DocPreview } from './DocPreview.tsx';
+import { OutreachThread } from './Outreach.tsx';
 
 /** Who made a status change, in plain words. */
 const ACTOR_LABEL: Record<string, string> = {
@@ -218,6 +219,12 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
                 </button>
               </div>
             </Section>
+
+            {data.outreach.length > 0 && (
+              <Section title="Outreach">
+                <OutreachThread touches={data.outreach} />
+              </Section>
+            )}
 
             <Section title="Notes">
               <textarea

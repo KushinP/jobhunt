@@ -27,6 +27,8 @@ export interface Job {
   drop_reason: string | null;
   rating: number | null;
   rating_gap: number | null;
+  /** the most advanced outreach touch logged for this role */
+  outreach_status?: 'none' | 'drafted' | 'sent' | 'replied';
   /** the profile of the company this role is at, when it has one */
   company_industry?: string | null;
   company_stage?: string | null;
@@ -84,9 +86,54 @@ export interface JobDetail {
     id: string; round: string; interviewer: string | null; interviewer_title: string | null;
     scheduled_at: string | null; outcome: string; hit_rate: number | null; debrief_at: string | null;
   }[];
+  /** every message logged about this role, oldest first */
+  outreach: OutreachRow[];
   /** instructions for building this one role now, prefilled into a Claude chat */
   build_prompt: string;
 }
+
+export type OutreachStatus = 'Drafted' | 'Sent' | 'Accepted' | 'Replied' | 'Meeting' | 'No reply' | 'Closed';
+
+export interface OutreachRow {
+  id: string; job_id: string | null; company: string; contact_name: string;
+  contact_role: string | null; contact_type: string | null; channel: string;
+  contact_url: string | null; contact_email: string | null;
+  hook_type: string | null; hook: string | null; touch_kind: string; parent_id: string | null;
+  body: string; status: OutreachStatus; status_set_by: 'you' | 'automation' | null;
+  drafted_at: string; sent_at: string | null; accepted_at: string | null; replied_at: string | null;
+  follow_up_due: string | null; notes: string | null;
+  job_title?: string | null; job_status?: string | null; job_rating?: number | null;
+}
+
+export interface OutreachDueItem {
+  reason: string; detail: string; id: string; job_id: string | null; company: string;
+  contact_name: string; touch_kind: string; status: OutreachStatus; sent_at: string | null;
+  business_days_waited: number;
+}
+
+export interface OutreachMetrics {
+  sent: number; accepted: number; replied: number; meeting: number;
+  accept_rate: number | null; reply_rate: number | null;
+  by_hook_type: { key: string; sent: number; replies: number; reply_rate: number | null }[];
+  by_contact_type: { key: string; sent: number; replies: number; reply_rate: number | null }[];
+  by_archetype: { key: string; sent: number; replies: number; reply_rate: number | null }[];
+  interview_rate: {
+    with_outreach: { applied: number; interviewed: number; rate: number | null };
+    without_outreach: { applied: number; interviewed: number; rate: number | null };
+  };
+  warning: boolean; warning_text?: string;
+}
+
+export const outreachApi = {
+  list: (params: { status?: string; company?: string; job_id?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, String(v));
+    return req<OutreachRow[]>(`/api/outreach${qs.toString() ? `?${qs}` : ''}`);
+  },
+  due: () => req<{ swept: string[]; due: OutreachDueItem[] }>('/api/outreach/due'),
+  update: (id: string, patch: { status?: string; notes?: string; body?: string; follow_up_due?: string | null }) =>
+    req<OutreachRow>(`/api/outreach/${id}`, { method: 'POST', body: JSON.stringify(patch) }),
+};
 
 export interface Bootstrap {
   identity: { name: string; email: string };
@@ -116,6 +163,7 @@ export interface Metrics {
     score_band: string; scored: number; applied: number;
     reached_interview: number; interview_rate_pct: number | null;
   }[];
+  outreach: OutreachMetrics;
 }
 
 export interface FollowUp {

@@ -59,6 +59,19 @@ export function Closes({ at, source }: { at?: string | null; source?: string | n
   );
 }
 
+/** How far outreach for a role has got, when any has. Absent means none logged. */
+export function OutreachBadge({ value }: { value?: 'none' | 'drafted' | 'sent' | 'replied' }) {
+  if (!value || value === 'none') return null;
+  const tone = value === 'replied' ? 'border-good/50 text-good'
+    : value === 'sent' ? 'border-accent/40 text-accent' : 'border-line text-muted';
+  return (
+    <span className={`ml-1.5 rounded border px-1 py-px text-[10px] ${tone}`}
+      title={`Outreach: ${value}`}>
+      {value === 'replied' ? 'replied' : value === 'sent' ? 'sent' : 'draft'}
+    </span>
+  );
+}
+
 export function ScoreBadge({ score }: { score: number | null }) {
   if (score == null) return null;
   const tone = score >= 90 ? 'text-good border-good'

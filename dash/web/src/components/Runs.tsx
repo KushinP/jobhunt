@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Run } from '../api.ts';
-import { Empty } from './bits.tsx';
+import { Empty, sourceLabel } from './bits.tsx';
 
 type Kind = 'search' | 'sweep' | 'build' | 'weekly' | 'other';
 
@@ -16,13 +16,6 @@ const KINDS: Record<Kind, {
   build: { label: 'Document build', dot: 'bg-good', stale: 3, stats: [['found', 'looked at'], ['kept', 'built'], ['dropped', 'turned away']] },
   weekly: { label: 'Weekly review', dot: 'bg-fg', stale: 8, stats: [] },
   other: { label: 'Other run', dot: 'bg-muted', stale: Infinity, stats: [['found', 'found'], ['kept', 'kept'], ['duplicates', 'duplicates'], ['dropped', 'dropped']] },
-};
-
-const SOURCE_NAME: Record<string, string> = {
-  company_boards: 'Company boards', yc: 'YC', linkedin: 'LinkedIn', indeed: 'Indeed',
-  ziprecruiter: 'ZipRecruiter', dice: 'Dice', builtin: 'Built In', linkedin_alerts: 'LinkedIn alerts',
-  gmail_linkedin_alerts: 'LinkedIn alerts', linkedin_email: 'LinkedIn alerts', jd_pass: 'JD pass',
-  jd_fetch: 'JD pass', gmail: 'Gmail', handshake: 'Handshake',
 };
 
 function kindOf(r: Run): Kind {
@@ -45,7 +38,7 @@ function splitSource(entry: string): { id: string; name: string; reason: string;
   const m = entry.match(/^([\w-]+)\s*[:(]?\s*([\s\S]*)$/);
   const id = (m?.[1] ?? entry).toLowerCase();
   const reason = (m?.[2] ?? '').replace(/^\(|\)$/g, '').replace(/^\s*[):]\s*/, '').trim();
-  return { id, name: SOURCE_NAME[id] ?? id, reason, partial: /partial/i.test(entry) };
+  return { id, name: sourceLabel(id), reason, partial: /partial/i.test(entry) };
 }
 
 /** Run times are stored in UTC ("2026-09-21 14:54:39"). */
@@ -169,7 +162,7 @@ function RunRow({ run, kind, at }: { run: Run; kind: Kind; at: Date }) {
   const h = health(run, kind);
   // one chip per source: worked, worked in part, or did not run
   const chips = new Map<string, { name: string; tone: 'ok' | 'warn' | 'bad' }>();
-  for (const id of used) chips.set(SOURCE_NAME[id] ?? id, { name: SOURCE_NAME[id] ?? id, tone: 'ok' });
+  for (const id of used) chips.set(sourceLabel(id), { name: sourceLabel(id), tone: 'ok' });
   for (const u of unavailable) {
     const wasUsed = chips.has(u.name);
     chips.set(u.name, { name: u.name, tone: u.partial || wasUsed ? 'warn' : 'bad' });

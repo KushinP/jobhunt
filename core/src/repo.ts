@@ -290,6 +290,19 @@ export async function setRating(
   return { moved_to: null };
 }
 
+/** YC hosts: Work at a Startup and the ycombinator.com company job pages. */
+const YC_URL = /^https?:\/\/(www\.)?(workatastartup\.com\/jobs\/|ycombinator\.com\/companies\/[^/]+\/jobs\/)/i;
+
+/**
+ * A role added by hand keeps the board it came from when the link says so: a YC posting
+ * pasted in is still a YC role, so source-level yield counts it there. Anything else stays
+ * 'manual'.
+ */
+export function sourceForManual(source: string, url: string | null): string {
+  if (source === 'manual' && url && YC_URL.test(url)) return 'yc';
+  return source;
+}
+
 /**
  * A role entered by hand: a referral, something found while browsing, a company you
  * decided to target. Goes through the same scoring and dedupe as an automated find, so a
@@ -305,7 +318,8 @@ export async function addManualJob(
     return { id: before.id, score: before.score, status: before.status, duplicate: true };
   }
 
-  const r = await ingestJobs(db, cfg, job.source ?? 'manual', [job]);
+  const source = sourceForManual(job.source ?? 'manual', job.url ?? null);
+  const r = await ingestJobs(db, cfg, source, [{ ...job, source }]);
   if (r.errors.length) throw new Error(r.errors[0].reason);
 
   const row = await db.prepare('SELECT id, score, status FROM jobs WHERE normalized_key = ?')

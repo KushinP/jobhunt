@@ -72,6 +72,18 @@ export function OutreachBadge({ value }: { value?: 'none' | 'drafted' | 'sent' |
   );
 }
 
+/** What each source id is called on screen. Ids are what the server records; these are what
+ * a person recognises. */
+const SOURCE_NAME: Record<string, string> = {
+  company_boards: 'Company boards', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
+  yc: 'Y Combinator', linkedin: 'LinkedIn', linkedin_email: 'LinkedIn alert email',
+  linkedin_alerts: 'LinkedIn alert email', gmail_linkedin_alerts: 'LinkedIn alert email',
+  indeed: 'Indeed', ziprecruiter: 'ZipRecruiter', dice: 'Dice', builtin: 'Built In',
+  handshake: 'Handshake', wellfound: 'Wellfound', browser: 'Your browser', manual: 'Added by you',
+  jd_pass: 'JD pass', jd_fetch: 'JD pass', gmail: 'Gmail',
+};
+export const sourceLabel = (id: string | null | undefined) => (id ? SOURCE_NAME[id] ?? id : 'unknown');
+
 export function ScoreBadge({ score }: { score: number | null }) {
   if (score == null) return null;
   const tone = score >= 90 ? 'text-good border-good'

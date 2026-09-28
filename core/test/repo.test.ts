@@ -271,6 +271,19 @@ test('a hand-entered role is scored by the same rules as an automated find', asy
   assert.equal(row!.rating, 5);
 });
 
+test('a hand-entered YC posting is tagged yc, not manual', async () => {
+  const { db } = makeTestDb();
+  for (const url of ['https://www.workatastartup.com/jobs/108692',
+    'https://www.ycombinator.com/companies/agave/jobs/CU8TDs5-customer-solutions-engineer']) {
+    const r = await addManualJob(db, cfg, {
+      title: 'AI Implementation Consultant', company: `YC Co ${url.length}`, location: 'Boston, MA',
+      url, jd_text: AI_JD,
+    });
+    const row = await db.prepare('SELECT source FROM jobs WHERE id = ?').bind(r.id).first<{ source: string }>();
+    assert.equal(row!.source, 'yc', url);
+  }
+});
+
 test('a hand-entered role cannot skip the exclusion rules', async () => {
   const { db } = makeTestDb();
   const r = await addManualJob(db, cfg, {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type Job } from '../api.ts';
-import { Breakdown, Closes, ScoreBadge, STATUSES, shortDate, statusLabel } from './bits.tsx';
+import { Breakdown, Closes, ScoreBadge, STATUSES, shortDate, sourceLabel, statusLabel } from './bits.tsx';
 import { CompanyLink } from './nav.tsx';
 import { Stars } from './Stars.tsx';
 import { DocPreview } from './DocPreview.tsx';
@@ -97,16 +97,7 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
               </div>
             </div>
 
-            {data.job.url && (
-              <a
-                href={data.job.url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-block text-sm text-accent underline underline-offset-2"
-              >
-                Open the posting
-              </a>
-            )}
+            <PostingLink job={data.job} onSaved={invalidate} onError={setErr} />
 
             <Facts job={data.job} onSaved={invalidate} onError={setErr} />
 
@@ -387,6 +378,7 @@ function Facts({ job, onSaved, onError }: {
       <Fact label="Closes" value={job.closes_at} type="date" saving={closes.isPending}
         onSave={(v) => closes.mutate(v)}
         display={<Closes at={job.closes_at} source={job.closes_source} />} />
+      <div><dt className="inline text-muted">Source </dt><dd className="inline">{sourceLabel(job.source)}</dd></div>
       <div><dt className="inline text-muted">Found </dt><dd className="inline">{shortDate(job.created_at)}</dd></div>
       {job.applied_at && <div><dt className="inline text-muted">Applied </dt><dd className="inline">{shortDate(job.applied_at)}</dd></div>}
     </dl>
@@ -438,3 +430,80 @@ function Fact({ label, value, display, placeholder, type = 'text', saving, onSav
   );
 }
 
+
+/**
+ * The posting link, and a way to correct it. Boards move postings, a scraper sometimes records
+ * a redirect, and a wrong link means an application sent to the wrong page. Replacing it is a
+ * two-step: the old link is not kept anywhere, so it is worth a look before it goes.
+ */
+function PostingLink({ job, onSaved, onError }: {
+  job: Job; onSaved: () => void; onError: (m: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(job.url ?? '');
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => { setDraft(job.url ?? ''); setEditing(false); setConfirming(false); }, [job.url]);
+
+  const save = useMutation({
+    mutationFn: (url: string | null) => api.setDetails(job.id, { url }),
+    onSuccess: () => { onError(null); setEditing(false); setConfirming(false); onSaved(); },
+    onError: (e: Error) => { onError(e.message); setConfirming(false); },
+  });
+
+  const next = draft.trim();
+  const changed = next !== (job.url ?? '');
+
+  if (!editing) {
+    return (
+      <p className="mt-2 flex flex-wrap items-baseline gap-2 text-sm">
+        {job.url ? (
+          <a href={job.url} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">
+            Open the posting
+          </a>
+        ) : <span className="text-muted">No posting link.</span>}
+        <button type="button" onClick={() => setEditing(true)}
+          className="text-xs text-muted underline underline-offset-2 hover:text-fg">
+          {job.url ? 'change link' : 'add a link'}
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-line p-2.5">
+      <label className="block text-xs font-semibold text-muted" htmlFor={`url-${job.id}`}>Posting link</label>
+      <input id={`url-${job.id}`} value={draft} autoFocus inputMode="url" placeholder="https://..."
+        onChange={(e) => { setDraft(e.target.value); setConfirming(false); }}
+        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent" />
+
+      {confirming ? (
+        <div className="mt-2 rounded-md border border-warn/40 bg-warn/10 p-2 text-xs">
+          <p className="text-warn">
+            Replace the link for this role? The one it has now is not kept anywhere.
+          </p>
+          <p className="mt-1 break-all text-muted">
+            <span className="font-medium text-fg">now:</span> {job.url || 'none'}<br />
+            <span className="font-medium text-fg">new:</span> {next || 'none'}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" disabled={save.isPending} onClick={() => save.mutate(next || null)}
+              className="rounded-md bg-accent px-2.5 py-1 font-semibold text-white disabled:opacity-50">
+              {save.isPending ? 'Saving…' : 'Yes, replace it'}
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} className="text-muted hover:text-fg">Back</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-3 text-xs">
+          <button type="button" disabled={!changed} onClick={() => setConfirming(true)}
+            className="rounded-md border border-line px-2.5 py-1 hover:border-accent disabled:opacity-40">
+            Save link
+          </button>
+          <button type="button" onClick={() => { setDraft(job.url ?? ''); setEditing(false); }}
+            className="text-muted hover:text-fg">Cancel</button>
+          {!changed && <span className="text-muted">Edit the address to save a change.</span>}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -23,6 +23,11 @@ type Tab = 'board' | 'list' | 'companies' | 'outreach' | 'documents' | 'trash' |
 
 const TABS: string[] = ['board', 'list', 'companies', 'outreach', 'documents', 'trash', 'followups', 'metrics', 'runs', 'evidence', 'setup'];
 
+/** Tabs that are tables and boards: they use the whole monitor, because more width means more
+ * columns and fewer sideways scrolls. The rest are prose and forms, where a line that runs the
+ * width of a large screen is unreadable, so they stay capped and centred. */
+const FULL_WIDTH: Tab[] = ['board', 'list', 'companies', 'outreach', 'documents', 'trash', 'followups', 'metrics', 'runs'];
+
 /** Tabs the header search filters directly; anywhere else, Enter takes the search to All roles. */
 const SEARCHABLE: Tab[] = ['board', 'list', 'companies', 'documents'];
 
@@ -78,7 +83,7 @@ export default function App() {
 
   return (
     <NavContext.Provider value={nav}>
-    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+    <div className={`mx-auto px-4 py-5 sm:px-6 2xl:px-8 ${FULL_WIDTH.includes(tab) ? 'max-w-none' : 'max-w-6xl'}`}>
       <header className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:mb-5">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">JobHunt</h1>

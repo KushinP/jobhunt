@@ -76,7 +76,7 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
         className="fixed inset-0 z-30 bg-black/25"
       />
       <aside
-        className="fixed inset-y-0 right-0 z-40 w-full max-w-xl overflow-y-auto overscroll-contain
+        className="fixed inset-y-0 right-0 z-40 w-full max-w-xl xl:max-w-2xl 2xl:max-w-3xl overflow-y-auto overscroll-contain
                    border-l border-line bg-bg p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]
                    pt-[max(1.25rem,env(safe-area-inset-top))] sm:p-6"
       >

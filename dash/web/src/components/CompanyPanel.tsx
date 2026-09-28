@@ -31,7 +31,7 @@ export function CompanyPanel({ name, covered, onClose }: {
   return (
     <>
       <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-10 bg-black/25" />
-      <aside className="fixed inset-y-0 right-0 z-20 w-full max-w-xl overflow-y-auto border-l border-line bg-bg p-5 sm:p-6">
+      <aside className="fixed inset-y-0 right-0 z-20 w-full max-w-xl xl:max-w-2xl 2xl:max-w-3xl overflow-y-auto border-l border-line bg-bg p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-muted">Company</p>

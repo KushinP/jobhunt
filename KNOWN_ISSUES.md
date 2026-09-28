@@ -62,13 +62,20 @@ Cloudflare's network, requests close together get 429s. It paces itself (about o
 seconds), retries twice, then leaves the rest for the next run. A big backlog takes a few runs
 to clear.
 
-## 9. Single user by design
+## 9. An outreach run cannot be logged
+
+`list_runs` accepts `kind: "outreach"`, but the `runs.kind` CHECK constraint from migration 0001
+does not include it, and rebuilding that table is not an additive migration. Nothing can be
+logged under that kind until the table is rebuilt. No scheduled outreach run exists yet, so
+nothing needs it today.
+
+## 10. Single user by design
 
 One allowed sign-in address, one profile, one evidence bank, one set of documents.
 Multi-tenancy means a `user_id` on every table, a different dedupe index, and real
 authentication. Not started.
 
-## 10. Indeed and ZipRecruiter cannot be read by the server
+## 11. Indeed and ZipRecruiter cannot be read by the server
 
 Both answer 403 to a server fetch, so roles from them arrive without a description and wait for
 a connector or your browser to fill one in. The daily search has a fallback through Claude's

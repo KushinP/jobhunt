@@ -19,21 +19,29 @@ does the thinking, and the data stays in your Cloudflare account.
   role was dropped.
 - **Writes the documents** from an *evidence bank*: a reviewed list of things you have
   actually done. Every bullet has to trace to a confirmed item.
+- **Tracks outreach**: the messages you send to a person at a company you applied to, what came
+  back, and whether any of it works. The cadence rules are enforced by the server, not by a
+  prompt: outreach only after the application, one message per company per day, one approach and
+  one nudge per contact.
 - **Prepares interviews** from the exact files you submitted, and records what happened so the
   next brief is better.
-- **Keeps the record**: a board, a table of every role seen, documents, run logs and metrics
-  on a small dashboard.
+- **Keeps the record**: a board, a table of every role seen, outreach, documents, run logs and
+  metrics on a small dashboard, including whether applying with outreach interviews better than
+  applying without.
 
 ## What it will not do
 
 These are enforced by the server, not by asking the model nicely:
 
 - **Never submits an application.** Autofill fills the form and stops at the submit button.
-- **Never sends email.** Follow-ups are written as Gmail drafts.
+- **Never sends email, and never messages anyone.** Follow-ups are written as Gmail drafts.
+  Outreach is drafted for you to send yourself; marking it Sent is you reporting what you did.
 - **Never claims what you have not confirmed.** Documents may only use confirmed evidence, and
   "boundary" items record claims never to make.
 - **Applied, Interviewing, Offer and Rejected are yours.** Automation is refused those
-  statuses, and Applied additionally requires a record of what was sent.
+  statuses, and Applied additionally requires a record of what was sent. The same is true of
+  outreach: Sent, Accepted, Replied and Meeting need your word, and the one thing automation may
+  decide is that a nudge went unanswered.
 - **Never stores demographic or EEO answers.** Those fields are left for you, on the form.
 - **Never fails silently.** Every run logs what it did, including the runs that stopped early.
 
@@ -48,8 +56,8 @@ mcp Worker  ──────────────►  D1 database  ◄─�
                                documents, runs
 ```
 
-- **`mcp`** is the connector Claude talks to: about 55 tools (search, score, evidence,
-  documents, interviews, setup). Sign-in is Google OAuth, restricted to one address.
+- **`mcp`** is the connector Claude talks to: about 60 tools (search, score, evidence,
+  documents, outreach, interviews, setup). Sign-in is Google OAuth, restricted to one address.
 - **`job`** serves the dashboard and its API from the same database.
 - **`core`** holds everything worth testing on its own: the scorer, the repository layer, the
   posting readers, the prompt generator.
@@ -123,7 +131,7 @@ servers, and are left to a connector.
 ## Repo layout
 
 ```
-core/        scoring, storage, posting readers, prompt generation, tests
+core/        scoring, storage, posting readers, outreach rules, prompt generation, tests
 mcp/         the Claude connector Worker (tools, OAuth, uploads)
 dash/        the dashboard Worker and its React app
 migrations/  the database schema, in order
@@ -138,7 +146,7 @@ tools/       admin scripts (backfills, uploading the skill zips)
 
 ```bash
 npm install
-node --test core/test/*.test.ts    # 166 tests, no network, real schema in node:sqlite
+node --test core/test/*.test.ts    # 180 tests, no network, real schema in node:sqlite
 npx tsc -p . --noEmit              # type-check workers and core
 npm run dev:mcp                    # local connector
 npm run dev:dash                   # local dashboard API

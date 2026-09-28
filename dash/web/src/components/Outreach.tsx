@@ -132,7 +132,7 @@ export function Outreach() {
           </div>
 
           {touches.isLoading ? <Empty>Loading…</Empty> : rows.length === 0 ? (
-            <Empty>No touches logged yet. Claude drafts them with the job-outreach skill; you send them.</Empty>
+            <Empty>No touches logged yet. Draft one with Claude, send it yourself, then log it here.</Empty>
           ) : (
             <ul className="space-y-1.5">
               {rows.map((t) => (

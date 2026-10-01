@@ -1,6 +1,7 @@
 # Deploying on every push (Cloudflare Workers Builds)
 
 Both Workers deploy from GitHub when `main` changes, so merging a pull request is the deploy.
+Connected 2026-10-01.
 The filled-in `wrangler.jsonc` files are gitignored, so the build writes them from the examples
 with `tools/write-wrangler-config.mjs`, using build variables you set once in Cloudflare.
 

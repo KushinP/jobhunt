@@ -12,11 +12,7 @@ const COLUMNS: { key: string; label: string; hint: string }[] = [
   { key: 'Complete', label: 'Ready', hint: 'Documents built. Read, then submit.' },
   { key: 'Applied', label: 'Applied', hint: 'Submitted, waiting.' },
   { key: 'Interviewing', label: 'Interviewing', hint: 'In process.' },
-  { key: 'Closed', label: 'Closed', hint: 'The employer stopped taking applications or filled it. Drop a card here; drag it out to reopen.' },
 ];
-/** Closed is not a status: a role keeps its status when it closes, so an application still counts. */
-const STATUS_COLUMNS = COLUMNS.map((c) => c.key).filter((k) => k !== 'Closed');
-const columnOf = (j: Job) => (j.role_closed_at ? 'Closed' : j.status);
 
 /** A move waiting for the person to confirm: marking applied records what went out. */
 interface Pending { job: Job; to: string }
@@ -26,7 +22,7 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   // Only the statuses the board shows, so it never needs a cap however much gets trashed.
   const { data, isLoading, error } = useQuery({
     queryKey: ['jobs', 'board', search],
-    queryFn: () => api.jobs({ status: STATUS_COLUMNS, q: search || undefined }),
+    queryFn: () => api.jobs({ status: COLUMNS.map((c) => c.key), q: search || undefined }),
   });
   const [prefs, setPrefs] = usePersisted<{ sort: Sort }>('jobhunt.board.v1', { sort: { key: 'score', desc: true } });
   const [dragging, setDragging] = useState<Job | null>(null);
@@ -45,13 +41,11 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   if (isLoading) return <Empty>Loading…</Empty>;
   if (error) return <Empty>Could not load the pipeline: {String(error)}</Empty>;
 
-  const jobs = (data?.rows ?? []).map((j) => {
-    const to = moved[j.id];
-    if (!to) return j;
-    return to === 'Closed' ? { ...j, role_closed_at: j.role_closed_at ?? 'now' } : { ...j, status: to, role_closed_at: null };
-  });
+  // A closed role leaves the board, as a skipped one does; All Roles still lists it, marked closed.
+  const jobs = (data?.rows ?? []).filter((j) => !j.role_closed_at)
+    .map((j) => (moved[j.id] ? { ...j, status: moved[j.id] } : j));
   // Queued always shows the order the build run takes them in, so the top card is the next built.
-  const byStatus = (s: string) => sortJobs(jobs.filter((j) => columnOf(j) === s),
+  const byStatus = (s: string) => sortJobs(jobs.filter((j) => j.status === s),
     s === 'Generate' ? { key: 'build', desc: false } : prefs.sort);
 
   const refresh = async () => {
@@ -66,13 +60,8 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   const move = async (job: Job, to: string) => {
     setMoved((m) => ({ ...m, [job.id]: to }));
     try {
-      if (to === 'Closed') await api.setClosed(job.id, true, 'Closed on the board');
-      else {
-        // Dragging a closed role into a column reopens it there.
-        if (job.role_closed_at) await api.setClosed(job.id, false);
-        if (to === 'Applied' && job.status !== 'Applied') await api.apply(job.id, job.url ?? undefined);
-        else if (to !== job.status) await api.setStatus(job.id, to, 'Moved on the board');
-      }
+      if (to === 'Applied') await api.apply(job.id, job.url ?? undefined);
+      else await api.setStatus(job.id, to, 'Moved on the board');
       await refresh();
       setNotice({ tone: 'ok', text: to === 'Skip'
         ? `Skipped ${job.title}. It is in Trash if you want it back.`
@@ -88,14 +77,14 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
     const job = dragging;
     setDragging(null);
     setOver(null);
-    if (!job || columnOf(job) === to) return;
-    if (to === 'Applied' && job.status !== 'Applied') setConfirm({ job, to });
+    if (!job || job.status === to) return;
+    if (to === 'Applied') setConfirm({ job, to });
     else void move(job, to);
   };
 
   const target = (key: string) => ({
     onDragOver: (e: React.DragEvent) => {
-      if (!dragging || columnOf(dragging) === key) return;
+      if (!dragging || dragging.status === key) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       if (over !== key) setOver(key);
@@ -135,7 +124,7 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
         {COLUMNS.map((col) => {
           const items = byStatus(col.key);
           const empty = items.length === 0;
-          const droppable = dragging && columnOf(dragging) !== col.key;
+          const droppable = dragging && dragging.status !== col.key;
           return (
             <section key={col.key} {...target(col.key)}
               className={`flex shrink-0 snap-start flex-col rounded-xl border bg-bg/40 transition-colors

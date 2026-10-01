@@ -109,7 +109,7 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
 
             {data.job.role_closed_at && (
               <p className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-line/40 px-3 py-2 text-sm">
-                <span>Role closed {data.job.role_closed_at.slice(0, 10)}. It is off the board and out of the build queue.</span>
+                <span>Closed {data.job.role_closed_at.slice(0, 10)}. It is off the board and out of the build queue.</span>
                 <button type="button" disabled={closeRole.isPending} onClick={() => closeRole.mutate(false)}
                   className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">
                   Reopen
@@ -203,13 +203,12 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
                     {statusLabel(s)}
                   </button>
                 ))}
-                {!data.job.role_closed_at && (
-                  <button type="button" disabled={closeRole.isPending} onClick={() => closeRole.mutate(true)}
-                    title="The employer stopped taking applications or filled it. The status is kept."
-                    className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">
-                    Role closed
-                  </button>
-                )}
+                <button type="button" disabled={!!data.job.role_closed_at || closeRole.isPending}
+                  onClick={() => closeRole.mutate(true)}
+                  title="The employer stopped taking applications or filled it. Takes it off the board; the status is kept."
+                  className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">
+                  Closed
+                </button>
               </div>
               <div className="mt-3 rounded-lg border border-line p-3">
                 <p className="text-xs text-muted">

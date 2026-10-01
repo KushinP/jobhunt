@@ -199,16 +199,20 @@ export function scoreJob(
  * - "Bachelor's degree or 7 years of experience" asks nothing of a graduate, so a degree
  *   sentence is read only up to the "or" that offers the alternative.
  * - "4 year degree" is a degree, "up to 5 years" is a ceiling, and "0 - 3 years" is a range.
+ * - "within the past 7 years" is a window, not a floor; "(preferred)" after the years discounts them.
  */
 export function statedYears(jd: string | null | undefined): number | null {
   if (!jd) return null;
   const found: number[] = [];
-  const n = String.raw`(?<![\d.])(?<!up to )(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*\d{1,2}\s*\+?\s*)?`
+  const n = String.raw`(?<![\d.])(?<!up to )(?<!(?:past|last|next|first|within) )(?<!into )(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*\d{1,2}\s*\+?\s*)?`
     + String.raw`years?\b(?!['’]?\s*(?:degree|college|university|bachelor|program))`;
   const years = new RegExp(n, 'g');
   for (const sentence of jdSentences(jd)) {
     if (ABOUT_THE_COMPANY.test(sentence) || LEADING_PREFERENCE.test(sentence)) continue;
-    const s = clauses(degreePath(sentence)).map(beforePreference).filter(Boolean).join(', ').trim();
+    // "3 or more years of experience (preferred)": a preference in brackets qualifies what
+    // precedes it, so it is unbracketed before the sentence is cut into clauses.
+    const unbracketed = sentence.replace(/\(\s*(preferred|desired|ideal|ideally|a plus|nice to have)\s*\)/g, ' $1 ');
+    const s = clauses(degreePath(unbracketed)).map(beforePreference).filter(Boolean).join(', ').trim();
     if (!s) continue;
     const bullet = s.match(new RegExp(String.raw`^(?:[-*•·]\s*)?(?:minimum(?: of)?\s*|at least\s*)?${n}`));
     if (bullet) found.push(Number(bullet[1]));

@@ -332,6 +332,10 @@ test('a degree alternative, a degree length, a ceiling and a spaced range are no
   assert.equal(statedYears('Up to 5 years of professional experience in financial services'), null);
   assert.equal(statedYears('- 0 - 3 years of relevant professional experience'), 0);
   assert.equal(statedYears('4 - 7 years’ experience in tax equity'), 4);
+  assert.equal(statedYears('Experience 3 or more years of experience (preferred)Supervisory responsibilities none.'), null);
+  assert.equal(statedYears('At least part of the qualifying professional experience must have been obtained within the past 7 years.'), null);
+  assert.equal(statedYears('Compressing 10 years of experience into 2.'), 10, 'marketing copy with a number still reads as a floor');
+  assert.equal(statedYears('3+ years of experience in data analysis.\n3+ years of experience using modern BI tools.'), 3);
   assert.equal(statedYears('Experience in business operations or a related analytical role.'), null,
     '"in business" is not "in business for 10 years"');
 });

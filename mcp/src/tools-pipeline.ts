@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   HumanOnlyStatusError, attachJd, ingestJobs, listQueue, loadConfig, logRun, putConfig,
-  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, saveDocument,
+  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument,
   setRating, setStatus, resolvePosting, boardNames, statusSetBy, fetchMissingJds,
   startUpload, addChunk, uploadInstructions, UploadError, CHUNK_CHARS, docLink,
   OUTREACH_STATUS_SQL, outreachMetrics,
@@ -332,6 +332,27 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     try {
       return ok(await rescoreJob(env.DB, cfg, id));
     } catch (e) { return fail(String(e)); }
+  });
+
+  server.registerTool('rescore_pipeline', {
+    description: 'Re-score roles already Queued (Generate) or New after the scoring rules or '
+      + 'config change, and move the ones the new rules rule out: Queued to New or Discarded, '
+      + 'New to Discarded. Never promotes, and never moves a role the person queued, set or '
+      + 'rated (those are re-scored and counted as held). dry_run (the default) reports what '
+      + 'would move without writing anything; show the person that list before running it for '
+      + 'real. One page per call: pass `next` back as `after` until it is null.',
+    inputSchema: {
+      statuses: z.array(z.enum(['Generate', 'New'])).default(['Generate']),
+      dry_run: z.boolean().default(true),
+      limit: z.number().int().min(1).max(150).default(100),
+      after: z.string().nullish().describe('the `next` value from the previous page'),
+    },
+  }, async ({ statuses, dry_run, limit, after }) => {
+    const cfg = await loadConfig(env.DB);
+    const r = await rescorePipeline(env.DB, cfg, { statuses, dryRun: dry_run, limit, after });
+    const verb = dry_run ? 'would move' : 'moved';
+    return ok(r, `Scanned ${r.scanned}; ${verb} ${r.moved.length}; ${r.held_by_person} held because you `
+      + `touched them.${r.next ? ' More remain: call again with after = next.' : ''}`);
   });
 
   server.registerTool('attach_jd', {

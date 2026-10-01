@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG } from '../src/config.ts';
 import {
   ingestJobs, setStatus, rescoreJob, listQueue, saveDocument, getDocument,
   recordSubmission, refreshFollowUps, loadConfig, putConfig, setRating, addManualJob, deleteDocument,
-  HumanOnlyStatusError, attachJd, statusSetBy, updateJobDetails,
+  HumanOnlyStatusError, attachJd, statusSetBy, updateJobDetails, rescorePipeline,
 } from '../src/repo.ts';
 
 const cfg = DEFAULT_CONFIG;
@@ -35,6 +35,35 @@ test('ingest classifies, dedupes and reports malformed rows', async () => {
   assert.equal(r.duplicates, 1, 'the repost must collide with the original');
   assert.equal(r.errors.length, 1);
   assert.match(r.errors[0].reason, /missing title or company/);
+});
+
+test('one posting under two titles is a duplicate by its source job id', async () => {
+  const { db, raw } = makeTestDb();
+  await ingestJobs(db, cfg, 'linkedin', [{ title: 'Financial Analyst', company: 'Adventist Health',
+    location: 'Boston, MA', source: 'linkedin', source_job_id: '4469667396', jd_text: AI_JD }]);
+  const r = await ingestJobs(db, cfg, 'linkedin', [{ title: 'Financial Analyst *Full-time, Day* (Hanford)',
+    company: 'Adventist Health', location: 'Boston, MA', source: 'linkedin', source_job_id: '4469667396' }]);
+  assert.equal(r.duplicates, 1);
+  assert.equal((raw.prepare('SELECT count(*) AS n FROM jobs').get() as { n: number }).n, 1);
+
+  const other = await ingestJobs(db, cfg, 'greenhouse', [{ title: 'Strategy Analyst', company: 'Other Co',
+    location: 'Boston, MA', source: 'greenhouse', source_job_id: '4469667396', jd_text: AI_JD }]);
+  assert.equal(other.duplicates, 0, 'the same id on another source is a different posting');
+});
+
+test('a company name with a legal form or ticker matches a row stored under the old key', async () => {
+  const { db, raw } = makeTestDb();
+  // A row written before company names were normalised keeps its old key.
+  await ingestJobs(db, cfg, 'linkedin', [{ title: 'Associate, Asset Management', company: 'Welltower',
+    location: 'Boston, MA', jd_text: AI_JD }]);
+  raw.prepare("UPDATE jobs SET normalized_key = 'associateassetmanagement|welltowerincnysewell', company = 'Welltower™ Inc. (NYSE:WELL)'").run();
+
+  const r = await ingestJobs(db, cfg, 'indeed', [{ title: 'Associate, Asset Management',
+    company: 'Welltower™ Inc. (NYSE:WELL)', location: 'Boston, MA' }]);
+  assert.equal(r.duplicates, 1, 'found by its legacy key');
+  const r2 = await ingestJobs(db, cfg, 'indeed', [{ title: 'Associate, Asset Management',
+    company: 'Welltower Inc', location: 'Boston, MA' }]);
+  assert.equal(r2.duplicates, 0, 'a third spelling of an old row is not caught until it is restored under the new key');
 });
 
 test('a duplicate enriches the existing row without changing its status', async () => {
@@ -516,4 +545,34 @@ test('salary, location and the link can be corrected by hand; title and company 
   await assert.rejects(() => updateJobDetails(db, 'missing', { salary: '$1' }), /no such job/);
   assert.equal((await db.prepare('SELECT title FROM jobs WHERE id = ?').bind(id).first<{ title: string }>())!.title,
     'AI Solutions Consultant', 'the title is untouched: the duplicate key is built from it');
+});
+
+test('rescore_pipeline demotes only what automation queued, and a dry run writes nothing', async () => {
+  const { db, raw } = makeTestDb();
+  const over = fullJd('Drive AI adoption for enterprise SaaS clients. Own implementation and onboarding, '
+    + 'gather requirements, run training, cross-functional with product and go-to-market. '
+    + '4+ years of experience in implementation consulting.');
+  await ingestJobs(db, cfg, 'test', ['Auto Co', 'Kush Co', 'Rated Co', 'Fine Co'].map((company) => (
+    { title: 'AI Solutions Consultant', company, location: 'Boston, MA', jd_text: company === 'Fine Co' ? AI_JD : over })));
+  // The scorer that queued them could not read the years: put them where it left them.
+  raw.prepare("UPDATE jobs SET status = 'Generate'").run();
+  const id = (c: string) => (raw.prepare('SELECT id FROM jobs WHERE company = ?').get(c) as { id: string }).id;
+  await setStatus(db, id('Kush Co'), 'Generate', 'human');
+  raw.prepare('UPDATE jobs SET rating = 4 WHERE company = ?').run('Rated Co');
+
+  const dry = await rescorePipeline(db, cfg, { statuses: ['Generate'], dryRun: true, limit: 50 });
+  assert.deepEqual(dry.moved.map((m) => m.company), ['Auto Co']);
+  assert.equal(dry.moved[0].reason, 'requires 4+ years of experience (limit 2)');
+  assert.equal(dry.held_by_person, 2);
+  assert.equal((raw.prepare("SELECT count(*) AS n FROM jobs WHERE status = 'Generate'").get() as { n: number }).n, 4,
+    'a dry run moves nothing');
+
+  const real = await rescorePipeline(db, cfg, { statuses: ['Generate'], dryRun: false, limit: 50 });
+  assert.equal(real.moved.length, 1);
+  const status = (c: string) => (raw.prepare('SELECT status FROM jobs WHERE company = ?').get(c) as { status: string }).status;
+  assert.equal(status('Auto Co'), 'Discarded');
+  assert.equal(status('Kush Co'), 'Generate', 'a role the person queued stays queued');
+  assert.equal(status('Rated Co'), 'Generate', 'a rated role stays queued');
+  assert.equal(status('Fine Co'), 'Generate');
+  assert.equal(await statusSetBy(db, id('Auto Co')), 'automation');
 });

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, normalizeKey } from '@jobhunt/core';
+import { type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, dedupeKeys } from '@jobhunt/core';
 import { type Env, fail, ok } from './env.ts';
 import { searchCompanyBoards } from './sources/boards.ts';
 import { searchBuiltIn } from './sources/builtin.ts';
@@ -95,8 +95,8 @@ export function registerSourceTools(server: McpServer, env: Env): void {
       if (!usEligible(p.location)) { dropped.outside_us++; continue; }
       const years = minYears(p.minExperience);
       if (years != null && years > max_years) { dropped.experience++; continue; }
-      const known = await env.DB.prepare('SELECT 1 AS k FROM jobs WHERE normalized_key = ?')
-        .bind(normalizeKey(p.title, p.companyName)).first();
+      const known = await env.DB.prepare('SELECT 1 AS k FROM jobs WHERE normalized_key IN (?, ?)')
+        .bind(...dedupeKeys(p.title, p.companyName)).first();
       if (known) { dropped.known++; continue; }
       candidates.push(p);
     }

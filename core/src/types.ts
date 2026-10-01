@@ -35,8 +35,10 @@ export interface ScoreBreakdown {
   skill: number;
   seniority: number;
   location: number;
-  /** the lowest minimum experience the JD states, when it states one */
+  /** the highest minimum experience the JD states as a requirement, when it states one */
   years_required?: number;
+  /** a skill from config.missing_skills that the JD requires; the role is not auto-queued */
+  missing_skill?: string;
 }
 
 export interface ScoreResult {
@@ -82,8 +84,12 @@ export interface Config {
   onsite_jd_terms: string[];
   disqualifying_senior_terms: string[];
   too_senior_terms: string[];
-  /** a JD whose stated minimum experience is above this is a level mismatch */
+  /** a JD whose stated minimum experience is above this is discarded as a level mismatch */
   max_years_required: number;
+  /** skills the person cannot be tested on; a JD requiring one stays in New instead of queuing */
+  missing_skills: string[];
+  /** matched against the company field only: staffing agencies and blind postings */
+  exclude_companies: string[];
   base_resume_map: Record<string, string>;
   query_set: { q: string; archetype: number; scope: 'local' | 'remote' | 'both' }[];
   search_defaults: {

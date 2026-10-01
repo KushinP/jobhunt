@@ -70,7 +70,7 @@ test('a remote-in-the-JD role with a foreign city still qualifies', () => {
   assert.equal(r.remote, true);
 });
 
-test('a director-level role is shown but never auto-generated', () => {
+test('a director-level role is discarded with the reason recorded', () => {
   const r = scoreJob(cfg, {
     title: 'Director of Business Operations', company: 'Startup Co', location: 'Remote',
     jd: 'Business operations leader at a series b venture-backed saas company. Forecasting, '
@@ -79,7 +79,8 @@ test('a director-level role is shown but never auto-generated', () => {
   assert.equal(r.level_mismatch, true);
   assert.equal(r.breakdown.seniority, 0);
   assert.equal(r.auto_generate, false, 'a level mismatch must not spend tokens');
-  assert.equal(statusForScore(r), 'New', 'it still reaches the dashboard for a human call');
+  assert.equal(r.drop_reason, 'level mismatch: senior title');
+  assert.equal(statusForScore(r), 'Discarded');
 });
 
 test('a VP title is hard-filtered', () => {
@@ -247,7 +248,7 @@ test('a JD asking for more experience than the person has is a level mismatch', 
 });
 
 test('a title-matching role is kept for review even when its JD shares little vocabulary', () => {
-  const r = scoreJob(cfg, { title: 'Business Operations Lead', company: 'Insureco', location: 'Boston, MA',
+  const r = scoreJob(cfg, { title: 'Business Operations Analyst', company: 'Insureco', location: 'Remote',
     jd: fullJd('Own weekly business reviews for our insurance products in excel.') });
   assert.ok(r.score < cfg.thresholds.hard_cutoff, `scores ${r.score}`);
   assert.equal(r.drop_reason, null);
@@ -290,4 +291,113 @@ test('entity-escaped HTML from Greenhouse becomes text, not tags', async () => {
   assert.ok(!out.includes('<'), out);
   assert.match(out, /- 6\+ years of experience/);
   assert.match(out, /Ops & strategy/);
+});
+
+// Phrasings below are taken from postings the production replay (09-30) read wrong.
+test('years are read from scraped text whose block boundaries were deleted', async () => {
+  const { statedYears } = await import('../src/score.ts');
+  assert.equal(statedYears('Bachelor’s degree in Finance required.MBA or advanced degree is a plus.'
+    + 'Experience5+ years of experience in Business Operations, Strategy, Consulting.'), 5,
+  'one squashed "sentence" containing "a plus" used to hide the whole requirements block');
+  assert.equal(statedYears('...so-what behind the numbers.You May Be a Fit If3–5 years of experience in '
+    + 'Business Operations, Strategy & Operations, or a similarly cross-functional role.'), 3);
+  assert.equal(statedYears('or equivalent practical experience.4 years of experience in financial planning'), 4);
+  assert.equal(statedYears('Three (3) plus years of experience in cost is required'), 3);
+  assert.equal(statedYears('Minimum three to five years of experience in a real estate analyst role'), 3);
+  assert.equal(statedYears('What you’ll bring to the role\nRequired 5+ years in a technical sales role'), 5);
+});
+
+test('a preference word discounts only what it qualifies', async () => {
+  const { statedYears } = await import('../src/score.ts');
+  assert.equal(statedYears('- 3+ years of relevant FP&A experience, ideally in corporate finance.'), 3);
+  assert.equal(statedYears('3+ years of experience in financial/bank services industry with 1+ year of '
+    + 'specific roles in business planning preferred'), 3);
+  assert.equal(statedYears('3 years of experience preferred.'), null);
+  assert.equal(statedYears('Ideally, you also have 4+ years of relevant experience in project finance.'), null);
+  assert.equal(statedYears('Strong mastery of Excel; 4 years of experience with SQL is a strong plus.'), null);
+});
+
+test('a degree alternative, a degree length, a ceiling and a spaced range are not floors', async () => {
+  const { statedYears } = await import('../src/score.ts');
+  assert.equal(statedYears("Bachelor's degree in economics, finance, and accounting or related discipline or "
+    + '7 years of progressively responsible experience in financial analysis'), null);
+  assert.equal(statedYears("Bachelor's degree or high school diploma or GED and 4 years of experience"), null);
+  assert.equal(statedYears("Bachelor's degree with 2 to 4 years of related experience or high school diploma "
+    + 'with 5 to 7 plus years of specific experience'), 2);
+  assert.equal(statedYears("3 or more years of work experience with a bachelor's degree or more than 2 years "
+    + 'of work experience with an advanced degree'), 3);
+  assert.equal(statedYears('Bachelor’s degree in a related field (business, economics, or similar)5–8 years '
+    + 'of experience in business analysis'), 5, 'a list of fields is not an alternative path');
+  assert.equal(statedYears('4 year degree or equivalent work experience in a sales ops environment'), null);
+  assert.equal(statedYears('Up to 5 years of professional experience in financial services'), null);
+  assert.equal(statedYears('- 0 - 3 years of relevant professional experience'), 0);
+  assert.equal(statedYears('4 - 7 years’ experience in tax equity'), 4);
+  assert.equal(statedYears('Experience in business operations or a related analytical role.'), null,
+    '"in business" is not "in business for 10 years"');
+});
+
+test('a posting that requires more years than the limit is discarded with the figure', () => {
+  const r = scoreJob(cfg, { title: 'Business Operations Associate', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Startup saas forecasting pricing. 3–5 years of experience in business operations. '
+      + 'Financial modeling, kpi dashboards, cross-functional analysis.') });
+  assert.equal(r.breakdown.years_required, 3);
+  assert.equal(r.drop_reason, 'requires 3+ years of experience (limit 2)');
+  assert.equal(statusForScore(r), 'Discarded');
+});
+
+test('senior titles are discarded, but associate-level manager titles are not', () => {
+  const jdText = fullJd('Startup saas forecasting pricing unit economics financial modeling kpi dashboards.');
+  for (const title of ['Senior Business Analyst', 'Business Operations Manager', 'Implementation Consultant III']) {
+    const r = scoreJob(cfg, { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
+    assert.equal(r.drop_reason, 'level mismatch: senior title', title);
+  }
+  for (const title of ['Associate Product Manager', 'Associate Manager, Business Operations', 'Chief of Staff',
+    'Implementation Manager']) {
+    const r = scoreJob(cfg, { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
+    assert.notEqual(r.drop_reason, 'level mismatch: senior title', title);
+  }
+});
+
+test('a required skill the person lacks keeps the role in New instead of queuing it', () => {
+  const skills = { ...cfg, missing_skills: ['sql', 'python'] };
+  const base = 'Drive AI adoption for enterprise SaaS clients. Own implementation and onboarding, '
+    + 'gather requirements, run training, work cross-functional with product and go-to-market teams. ';
+  const run = (extra: string) => scoreJob(skills, { title: 'AI Implementation Consultant', company: 'Acme',
+    location: 'Boston, MA', jd: fullJd(base + extra) });
+  for (const req of ['Strong SQL skills with the ability to analyze large datasets.',
+    'Advanced SQL and working knowledge of Python.', 'You can write SQL window functions without looking them up.']) {
+    const r = run(req);
+    assert.equal(r.breakdown.missing_skill, 'sql', req);
+    assert.equal(r.auto_generate, false, req);
+    assert.equal(statusForScore(r), 'New', req);
+  }
+  for (const soft of ['Experience with, or a strong interest in learning, SQL and Snowflake.',
+    'Familiarity with SQL, APIs, or advanced data analysis tools.', 'SQL experience is a strong plus.',
+    'Our platform leverages the strength of Microsoft SQL technology to provide advanced applications.']) {
+    const r = run(soft);
+    assert.equal(r.breakdown.missing_skill, undefined, soft);
+    assert.equal(r.auto_generate, true, soft);
+  }
+});
+
+test('staffing agencies and blind postings are excluded by the company field alone', () => {
+  for (const company of ['Robert Half', 'Coda Search│Staffing', 'Arrow Search Partners', '7Seventy Recruiting',
+    'Confidential']) {
+    const r = scoreJob(cfg, { title: 'Strategic Finance Associate', company, location: 'Boston, MA', jd: AI_JD });
+    assert.equal(r.excluded, true, company);
+  }
+  const r = scoreJob(cfg, { title: 'AI Implementation Consultant', company: 'Scale Labs', location: 'Boston, MA',
+    jd: fullJd('You will implement our platform for our clients in staffing and recruitment. ' + AI_JD) });
+  assert.equal(r.excluded, false, 'a JD that mentions staffing is not an agency posting');
+});
+
+test('abbreviated operations titles match their target terms', () => {
+  const jdText = fullJd('Founding team at a series a startup. Forecasting, pricing, kpi dashboards, metrics, '
+    + 'cross-functional analysis with the founders.');
+  for (const title of ['Founding Ops', 'Forward Deployed Operator']) {
+    const r = scoreJob({ ...cfg, archetypes: cfg.archetypes.map((a) => a.id === 4
+      ? { ...a, title_terms: [...a.title_terms, 'founding operations', 'forward deployed operations'] } : a) },
+    { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
+    assert.notEqual(r.drop_reason, 'title matches no target role', title);
+  }
 });

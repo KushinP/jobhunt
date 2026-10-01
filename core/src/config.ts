@@ -65,9 +65,21 @@ export const DEFAULT_CONFIG: Config = {
     'director', 'principal', 'senior manager', 'lead', 'leader', 'senior', 'sr', 'staff',
     'manager', 'iii',
   ],
-  // About two years out of school. A JD asking three or more waits in New for a person to
-  // judge rather than being queued for documents.
+  // About two years out of school. A JD whose stated minimum is three or more is discarded,
+  // with the parsed figure as the reason, so the Discarded audit can catch a misread.
   max_years_required: 2,
+  // Skills to keep off every document and out of interviews. A JD that requires one ("Strong
+  // SQL") waits in New for a person instead of queuing for documents. Filled at onboarding.
+  missing_skills: [],
+  // Staffing agencies and blind postings, matched against the company field only. An agency
+  // posting names no employer, so no tailored document is possible.
+  exclude_companies: [
+    'staffing', 'recruitment', 'recruiting', 'search', 'search partners', 'search group',
+    'talent solutions', 'talent partners', 'executive search', 'confidential', 'undisclosed',
+    'robert half', 'insight global', 'teksystems', 'apex systems', 'selby jennings',
+    'referment', 'green key resources', 'tenth revolution group', 'hunter sf', 'questpro',
+    'dewinter group', 'hrcap', 'jobgether', 'cypress hcm', 'ktek resourcing',
+  ],
 
   exclude_terms_title: [
     'internship', 'intern', 'co-op', 'coop', 'apprentice', 'apprenticeship', 'fellowship',

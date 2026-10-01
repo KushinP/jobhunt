@@ -144,6 +144,8 @@
     "iii"
   ],
   "max_years_required": 2,
+  "missing_skills": ["sql"],
+  "exclude_companies": ["staffing", "recruiting", "recruitment", "search partners", "confidential"],
   "exclude_terms_title": [
     "internship",
     "intern",

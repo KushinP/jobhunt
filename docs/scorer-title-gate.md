@@ -2,9 +2,8 @@
 
 # The scorer's title gate is discarding good roles
 
-Found 2026-09-23 during the daily sweep. One of the four fixes is applied. The
-other three need code changes in the JobHunt Worker and cannot be made from
-config or from a scheduled run. This doc is the implementation spec for them.
+Found 2026-09-23 during the daily sweep. Status as of 2026-10-01: items 1, 3, 4
+and 5 are applied; item 2 is deliberately not (see below).
 
 ## The evidence
 
@@ -49,7 +48,16 @@ Watch for: this widens what passes the gate, so intake volume rises. If Queued
 grows, the lever is `thresholds.auto_generate` via the weekly retune, not
 narrowing these terms again.
 
-## 2. NOT APPLIED: demote the title gate (Worker code)
+## 2. NOT APPLIED, by decision: demote the title gate (Worker code)
+
+Not done on 2026-10-01. The queue was growing by about 130 roles a day against
+a build of 10 to 12, so widening the gate would add volume where the problem is
+volume. The specific false drops it was meant to fix are handled narrowly
+instead: "Ops" and "Operator" in a title now read as "operations", and missing
+title terms go into the archetypes by config. Revisit if the Discarded audit
+keeps finding title-only drops scoring 80+.
+
+Original proposal:
 
 No config key controls it. In the scoring path, stop returning
 `drop_reason: "title matches no target role"` as a hard drop. Make the title
@@ -57,7 +65,16 @@ match a score contribution only. If a hard floor is wanted, condition it on the
 other dimensions, for example drop only when title scores 0 AND domain + skill
 together are below half their combined weight (currently 45, so below 22).
 
-## 3. NOT APPLIED: enforce max_years_required (Worker code)
+## 3. APPLIED 2026-10-01: enforce max_years_required (Worker code)
+
+A stated minimum above `max_years_required` is now a drop, with the figure in
+`drop_reason`. The parser was the larger bug: LinkedIn text arrives with block
+boundaries deleted ("...is a plus.Experience5+ years of experience..."), so the
+whole requirements block read as one sentence containing "a plus" and was
+skipped. Replayed against 452 production roles the sweep or build had judged,
+the years/level rejects the scorer still queued fell from 164 of 195 to 59.
+
+Original note:
 
 `max_years_required` is already 2 and `score_breakdown` already records a
 parsed `years_required` (two rows from the same bank on 2026-09-23 both showed
@@ -74,7 +91,7 @@ would also kill roles whose JD says "3+ years preferred", turning a
 Queued-noise problem into new silent false negatives, which is the exact failure
 this doc is about.
 
-## 4. NOT APPLIED: an exclude_companies key (Worker code)
+## 4. APPLIED 2026-10-01: an exclude_companies key (Worker code)
 
 No such key exists, and `put_config` only replaces keys that already exist.
 Add one, matched against the company field at ingest. 18 agency or blind
@@ -91,7 +108,7 @@ Partners. Also drop when the company field matches "confidential" or
 Do NOT implement this as a JD-text match on "our client": customer-facing JDs
 say "our clients" routinely, and that would create false negatives.
 
-## 5. NOT APPLIED: dedupe on source_job_id (Worker code)
+## 5. APPLIED 2026-10-01: dedupe on source_job_id (Worker code)
 
 `normalized_key` is title plus company, so one posting under two company
 spellings ingests twice. On 2026-09-23 a single LinkedIn posting landed twice

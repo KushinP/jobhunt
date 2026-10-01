@@ -4,8 +4,37 @@
  * Must stay byte-identical across every writer, so both Workers import this one function.
  */
 export function normalizeKey(title: string, company: string): string {
-  const strip = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return `${strip(title)}|${strip(companyCore(company))}`;
+}
+
+/**
+ * The key rows were stored under before company names were normalised. Rows keep the key they
+ * were written with, so a lookup checks both: `WHERE normalized_key IN (new, legacy)`.
+ */
+export function legacyKey(title: string, company: string): string {
   return `${strip(title)}|${strip(company)}`;
+}
+
+/** Both keys a role may be stored under, for `normalized_key IN (?, ?)`. */
+export function dedupeKeys(title: string, company: string): [string, string] {
+  return [normalizeKey(title, company), legacyKey(title, company)];
+}
+
+const strip = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/**
+ * A company name without its legal form, ticker or location: one LinkedIn posting arrived as
+ * both "Welltower™ Inc. (NYSE:WELL)" and "Welltower", and a bank with and without "US".
+ */
+function companyCore(company: string): string {
+  const core = company.toLowerCase()
+    .replace(/[™®©]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(the|inc|incorporated|llc|l\.?l\.?c|ltd|limited|corp|corporation|co|company|plc|lp|l\.?p|group|holdings|us|usa)\b\.?/g, ' ')
+    .replace(/[\s,.]+/g, ' ')
+    .trim();
+  // A name that is nothing but those words ("The Group") keeps its original form.
+  return core || company;
 }
 
 /** Regex metacharacters are stripped, not escaped, so a mistyped config term degrades

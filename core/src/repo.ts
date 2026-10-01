@@ -3,7 +3,7 @@ import type {
 } from './types.ts';
 import { HUMAN_ONLY_STATUSES } from './types.ts';
 import { mergeConfig } from './config.ts';
-import { normalizeKey } from './normalize.ts';
+import { dedupeKeys, normalizeKey } from './normalize.ts';
 import { scoreJob, statusForScore } from './score.ts';
 import { salaryFromJd } from './salary.ts';
 import { closingDateFromJd, toIsoDate } from './dates.ts';
@@ -91,9 +91,7 @@ export async function ingestJobs(
     }
 
     const key = normalizeKey(title, company);
-    const existing = await db.prepare(
-      'SELECT id, jd_text IS NULL OR length(jd_text) < 800 AS needs_jd FROM jobs WHERE normalized_key = ?',
-    ).bind(key).first<{ id: string; needs_jd: number }>();
+    const existing = await findExisting(db, title, company, raw.source ?? source, raw.source_job_id);
 
     const salary = raw.salary?.trim() || salaryFromJd(raw.jd_text);
     const closes = closesFor(raw);
@@ -162,6 +160,25 @@ export async function ingestJobs(
   }
 
   return out;
+}
+
+/**
+ * The row a sighting belongs to, if any. The source's own job id is checked first: one LinkedIn
+ * posting arrived twice under two titles ("Financial Analyst" and "Financial Analyst
+ * *Full-time, Day* (Hanford)"). Then the title and company key, in its current form and the
+ * form older rows were stored under.
+ */
+async function findExisting(
+  db: D1Like, title: string, company: string, source: string, sourceJobId: string | null | undefined,
+): Promise<{ id: string; needs_jd: number } | null> {
+  const cols = 'id, jd_text IS NULL OR length(jd_text) < 800 AS needs_jd';
+  if (sourceJobId) {
+    const bySource = await db.prepare(`SELECT ${cols} FROM jobs WHERE source = ? AND source_job_id = ? LIMIT 1`)
+      .bind(source, sourceJobId).first<{ id: string; needs_jd: number }>();
+    if (bySource) return bySource;
+  }
+  return db.prepare(`SELECT ${cols} FROM jobs WHERE normalized_key IN (?, ?) LIMIT 1`)
+    .bind(...dedupeKeys(title, company)).first<{ id: string; needs_jd: number }>();
 }
 
 /** Status writes go through here so the actor rule is enforced in one place. */
@@ -311,8 +328,8 @@ export function sourceForManual(source: string, url: string | null): string {
 export async function addManualJob(
   db: D1Like, cfg: Config, job: RawJob & { rating?: number | null },
 ): Promise<{ id: string; score: number; status: JobStatus; duplicate: boolean }> {
-  const before = await db.prepare('SELECT id, status, score FROM jobs WHERE normalized_key = ?')
-    .bind(normalizeKey(job.title ?? '', job.company ?? '')).first<
+  const before = await db.prepare('SELECT id, status, score FROM jobs WHERE normalized_key IN (?, ?)')
+    .bind(...dedupeKeys(job.title ?? '', job.company ?? '')).first<
       { id: string; status: JobStatus; score: number }>();
   if (before) {
     return { id: before.id, score: before.score, status: before.status, duplicate: true };
@@ -322,8 +339,8 @@ export async function addManualJob(
   const r = await ingestJobs(db, cfg, source, [{ ...job, source }]);
   if (r.errors.length) throw new Error(r.errors[0].reason);
 
-  const row = await db.prepare('SELECT id, score, status FROM jobs WHERE normalized_key = ?')
-    .bind(normalizeKey(job.title ?? '', job.company ?? '')).first<
+  const row = await db.prepare('SELECT id, score, status FROM jobs WHERE normalized_key IN (?, ?)')
+    .bind(...dedupeKeys(job.title ?? '', job.company ?? '')).first<
       { id: string; score: number; status: JobStatus }>();
   if (!row) throw new Error('the role was not stored');
 
@@ -366,6 +383,58 @@ export async function attachJd(
     return { score: sc, from, to, moved: true };
   }
   return { score: sc, from, to: from, moved: false };
+}
+
+export interface RescoreMove {
+  id: string; title: string; company: string; from: JobStatus; to: JobStatus; reason: string;
+}
+
+/**
+ * Re-scores roles already in the pipeline after the scoring rules change, and moves the ones
+ * the new rules rule out. Only demotes (Queued to New or Discarded, New to Discarded): promoting
+ * would refill the queue the change was meant to empty. A role the person has touched (any
+ * status they set, or a rating) is re-scored but never moved. One page per call, by id, so a
+ * large pipeline stays inside a Worker's query budget: pass `next` back as `after`.
+ */
+export async function rescorePipeline(db: D1Like, cfg: Config, opts: {
+  statuses: ('Generate' | 'New')[]; dryRun: boolean; limit: number; after?: string | null;
+}): Promise<{ scanned: number; moved: RescoreMove[]; held_by_person: number; next: string | null }> {
+  const statuses = opts.statuses.length ? opts.statuses : ['Generate'];
+  const { results } = await db.prepare(
+    `SELECT j.id, j.title, j.company, j.location, j.jd_text, j.salary, j.status, j.rating,
+       EXISTS (SELECT 1 FROM status_history h WHERE h.job_id = j.id AND h.actor <> 'automation') AS touched
+     FROM jobs j WHERE j.status IN (${statuses.map(() => '?').join(', ')}) AND j.id > ?
+     ORDER BY j.id LIMIT ?`,
+  ).bind(...statuses, opts.after ?? '', opts.limit).all<{
+    id: string; title: string; company: string; location: string | null; jd_text: string | null;
+    salary: string | null; status: JobStatus; rating: number | null; touched: number;
+  }>();
+
+  const moved: RescoreMove[] = [];
+  let held = 0;
+  for (const r of results) {
+    const sc = scoreJob(cfg, { ...r, jd: r.jd_text });
+    const target = statusForScore(sc);
+    const demotes = (r.status === 'Generate' && target !== 'Generate')
+      || (r.status === 'New' && target === 'Discarded');
+    if (!opts.dryRun) {
+      await db.prepare(
+        `UPDATE jobs SET score = ?, score_breakdown = ?, archetype = ?, drop_reason = ?,
+           updated_at = datetime('now') WHERE id = ?`,
+      ).bind(sc.score, JSON.stringify(sc.breakdown), sc.archetype, sc.drop_reason, r.id).run();
+    }
+    if (!demotes) continue;
+    if (r.touched || r.rating != null) { held++; continue; }
+    const reason = sc.drop_reason
+      ?? (sc.breakdown.missing_skill ? `requires ${sc.breakdown.missing_skill}, which you cannot be tested on`
+        : 'no longer meets the queue threshold');
+    moved.push({ id: r.id, title: r.title, company: r.company, from: r.status, to: target, reason });
+    if (!opts.dryRun) await setStatus(db, r.id, target, 'automation', `Re-scored: ${reason}`);
+  }
+  return {
+    scanned: results.length, moved, held_by_person: held,
+    next: results.length === opts.limit ? results[results.length - 1].id : null,
+  };
 }
 
 export async function listQueue(db: D1Like, limit = 25) {

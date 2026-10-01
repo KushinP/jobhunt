@@ -37,17 +37,21 @@ type, and fix both skills.
 a Supabase mirror and a `jobhunt sync-config` command from an earlier version. The cloud-install
 header overrides them, but they mislead anyone reading the skill.
 
-## 5. Deduplication is by title and company
+## 5. Deduplication still falls back to title and company
 
-`normalizeKey()` treats "the same title at the same company" as one role, so the same job
-posted in two cities collapses into one row, and a genuinely different role with an identical
-title is hidden. Sources return a stable `source_job_id`; the key should prefer it.
+Ingest now checks the source's own `source_job_id` first, and company names are compared without
+their legal form, ticker or location ("Welltower Inc. (NYSE:WELL)" is "Welltower"). The fallback
+key is still title plus company, so the same job posted in two cities collapses into one row, and
+a genuinely different role with an identical title is hidden. Rows written before the company
+normalisation keep their old key; lookups check both, which catches a new spelling of an old row
+only when it normalises to the old row's exact form.
 
-## 6. There is no way to exclude a company
+## 6. Excluding a company is by config, not by the dashboard's "avoid"
 
-Industries, titles, terms and a pay floor all filter. A company you never want to hear from
-again does not: you can mark it "avoid" in the dashboard, which only hides it from lists. An
-`exclude_companies` config key should drop its postings on arrival.
+`exclude_companies` drops a posting whose company field matches, on arrival. It ships with
+staffing-agency words and names ("staffing", "recruiting", "search partners", "Robert Half"). Marking
+a company "avoid" in the dashboard still only hides it from lists; it does not add it to
+`exclude_companies`.
 
 ## 7. Documents live in the database
 

@@ -104,3 +104,18 @@ test('each node carries exactly the roles in it, so a click can list precisely t
   const all = leaves.flatMap((n) => n.ids);
   assert.equal(new Set(all).size, rows.length, 'every role appears in exactly one leaf');
 });
+
+test('a closed role stops where it was unless an outcome already came back', () => {
+  const closed = { role_closed_at: '2026-10-01 12:00:00' };
+  assert.equal(leafFor(row('New', closed)), 'closed');
+  assert.equal(leafFor(row('Complete', { ...closed, resume_count: 1 })), 'closed');
+  assert.equal(leafFor(row('Applied', closed)), 'closed_applied');
+  assert.equal(leafFor(row('Interviewing', { ...closed, interview_count: 1 })), 'in_process');
+  assert.equal(leafFor(row('Rejected', closed)), 'rejected_cold');
+  assert.equal(leafFor(row('Discarded', { ...closed, drop_reason: 'below hard cutoff' })), 'discard:cutoff');
+
+  const { nodes } = pipelineFlow([...SAMPLE, row('Applied', closed), row('New', closed)]);
+  const applied = nodes.find((n) => n.id === 'applied')!;
+  const children = nodes.filter((n) => n.parent === 'applied');
+  assert.equal(children.reduce((a, n) => a + n.count, 0), applied.count, 'closed after applying still sums under Applied');
+});

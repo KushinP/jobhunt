@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG } from '../src/config.ts';
 import {
   ingestJobs, setStatus, rescoreJob, listQueue, saveDocument, getDocument,
   recordSubmission, refreshFollowUps, loadConfig, putConfig, setRating, addManualJob, deleteDocument,
-  HumanOnlyStatusError, attachJd, statusSetBy, updateJobDetails, rescorePipeline,
+  HumanOnlyStatusError, attachJd, statusSetBy, updateJobDetails, rescorePipeline, setRoleClosed,
 } from '../src/repo.ts';
 
 const cfg = DEFAULT_CONFIG;
@@ -575,4 +575,41 @@ test('rescore_pipeline demotes only what automation queued, and a dry run writes
   assert.equal(status('Rated Co'), 'Generate', 'a rated role stays queued');
   assert.equal(status('Fine Co'), 'Generate');
   assert.equal(await statusSetBy(db, id('Auto Co')), 'automation');
+});
+
+test('a closed role keeps its status, leaves the queue and stops its follow-ups', async () => {
+  const { db, raw } = makeTestDb();
+  await ingestJobs(db, cfg, 'test', [
+    { title: 'AI Solutions Consultant', company: 'Applied Co', location: 'Boston, MA', jd_text: AI_JD },
+    { title: 'AI Solutions Consultant', company: 'Queued Co', location: 'Boston, MA', jd_text: AI_JD },
+  ]);
+  const id = (c: string) => (raw.prepare('SELECT id FROM jobs WHERE company = ?').get(c) as { id: string }).id;
+  const applied = id('Applied Co');
+  const queued = id('Queued Co');
+  await saveDocument(db, { job_id: applied, kind: 'resume', content: new TextEncoder().encode('a'), filename: 'a.docx' });
+  await recordSubmission(db, { job_id: applied });
+  await setStatus(db, applied, 'Applied', 'human');
+  raw.prepare("UPDATE submissions SET applied_at = datetime('now','-11 days') WHERE job_id = ?").run(applied);
+  assert.equal(await refreshFollowUps(db, cfg), 1);
+  assert.equal((await listQueue(db)).length, 1);
+
+  await setRoleClosed(db, applied, true, 'human', 'Posting says the role is filled');
+  await setRoleClosed(db, queued, true, 'automation', 'No longer accepting applications');
+
+  const row = raw.prepare('SELECT status, role_closed_at, notes FROM jobs WHERE id = ?').get(applied) as
+    { status: string; role_closed_at: string | null; notes: string };
+  assert.equal(row.status, 'Applied', 'an application that went out still counts as one');
+  assert.ok(row.role_closed_at);
+  assert.match(row.notes, /filled/);
+  assert.equal((raw.prepare('SELECT count(*) AS n FROM follow_ups WHERE done = 0').get() as { n: number }).n, 0,
+    'no follow-up on a closed role');
+  raw.prepare("UPDATE submissions SET applied_at = datetime('now','-30 days') WHERE job_id = ?").run(applied);
+  assert.equal(await refreshFollowUps(db, cfg), 0, 'and none is created later');
+  assert.equal((await listQueue(db)).length, 0, 'a closed role is not built');
+  assert.ok((raw.prepare('SELECT role_closed_at FROM v_pipeline WHERE id = ?').get(queued) as
+    { role_closed_at: string | null }).role_closed_at, 'the pipeline view carries the column');
+
+  await assert.rejects(setRoleClosed(db, queued, false, 'automation'), /only the person reopens/);
+  await setRoleClosed(db, queued, false, 'human');
+  assert.equal((await listQueue(db)).length, 1, 'reopened, it is queued again');
 });

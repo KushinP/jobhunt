@@ -385,6 +385,39 @@ export async function attachJd(
   return { score: sc, from, to: from, moved: false };
 }
 
+/**
+ * Records that a role closed (the employer stopped taking applications or filled it), or
+ * reopens it. Closing does not change the status, so an application that went out still
+ * counts as one; it takes the role out of the build queue and the active board, and closes
+ * any follow-up still open on it. Automation may close a role, since a closed posting is a
+ * fact it can read, but only the person reopens one.
+ */
+export async function setRoleClosed(
+  db: D1Like, jobId: string, closed: boolean, actor: Actor, note?: string,
+): Promise<{ id: string; role_closed_at: string | null }> {
+  const row = await db.prepare('SELECT role_closed_at FROM jobs WHERE id = ?')
+    .bind(jobId).first<{ role_closed_at: string | null }>();
+  if (!row) throw new Error(`no such job ${jobId}`);
+  if (!closed && actor === 'automation') {
+    throw new Error('only the person reopens a closed role');
+  }
+  await db.prepare(
+    `UPDATE jobs SET role_closed_at = CASE WHEN ? THEN COALESCE(role_closed_at, datetime('now')) END,
+       notes = CASE WHEN ? IS NULL THEN notes
+                    WHEN notes IS NULL OR notes = '' THEN ? ELSE notes || char(10) || ? END,
+       updated_at = datetime('now') WHERE id = ?`,
+  ).bind(closed ? 1 : 0, note ?? null, note ?? null, note ?? null, jobId).run();
+  if (closed) {
+    await db.prepare(
+      "UPDATE follow_ups SET done = 1, done_at = datetime('now'), notes = COALESCE(notes, 'role closed') "
+      + 'WHERE job_id = ? AND done = 0',
+    ).bind(jobId).run();
+  }
+  const after = await db.prepare('SELECT role_closed_at FROM jobs WHERE id = ?')
+    .bind(jobId).first<{ role_closed_at: string | null }>();
+  return { id: jobId, role_closed_at: after?.role_closed_at ?? null };
+}
+
 export interface RescoreMove {
   id: string; title: string; company: string; from: JobStatus; to: JobStatus; reason: string;
 }
@@ -449,6 +482,7 @@ export async function listQueue(db: D1Like, limit = 25) {
                        WHERE h.job_id = jobs.id AND h.to_status = 'Generate'
                        ORDER BY h.id DESC LIMIT 1) = 'human' THEN 'you' ELSE 'automation' END AS queued_by
      FROM jobs WHERE status = 'Generate' AND COALESCE(rating, 3) > 2
+       AND role_closed_at IS NULL
        -- a role whose cover letter failed after the resume saved stays queued, not stuck
        AND NOT (id IN (SELECT job_id FROM documents WHERE kind = 'resume')
                 AND id IN (SELECT job_id FROM documents WHERE kind = 'cover_letter'))
@@ -581,7 +615,7 @@ export async function refreshFollowUps(db: D1Like, cfg: Config): Promise<number>
   const { results } = await db.prepare(
     `SELECT j.id, date(s.applied_at, '+' || ? || ' days') AS due
      FROM jobs j JOIN submissions s ON s.job_id = j.id
-     WHERE j.status = 'Applied'
+     WHERE j.status = 'Applied' AND j.role_closed_at IS NULL
        AND date(s.applied_at, '+' || ? || ' days') <= date('now')`,
   ).bind(days, days).all<{ id: string; due: string }>();
 

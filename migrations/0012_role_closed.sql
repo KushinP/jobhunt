@@ -1,0 +1,11 @@
+-- A role can close: the employer stops taking applications or fills it, sometimes after you
+-- applied. That is a fact about the posting, not a step in your process, so it is a date on
+-- the role rather than a status. A role you applied to that closes stays Applied in the
+-- metrics, and leaves the active board columns for a Closed column.
+--
+-- Not a new status on purpose: adding one means rebuilding `jobs` to change its CHECK
+-- constraint, and dropping `jobs` cascades a delete to every document, submission and
+-- history row that references it.
+--
+-- Additive only: one nullable column. v_pipeline selects j.*, so it carries the column.
+ALTER TABLE jobs ADD COLUMN role_closed_at TEXT;

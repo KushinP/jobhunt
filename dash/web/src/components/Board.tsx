@@ -41,7 +41,9 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   if (isLoading) return <Empty>Loading…</Empty>;
   if (error) return <Empty>Could not load the pipeline: {String(error)}</Empty>;
 
-  const jobs = (data?.rows ?? []).map((j) => (moved[j.id] ? { ...j, status: moved[j.id] } : j));
+  // A closed role leaves the board, as a skipped one does; All Roles still lists it, marked closed.
+  const jobs = (data?.rows ?? []).filter((j) => !j.role_closed_at)
+    .map((j) => (moved[j.id] ? { ...j, status: moved[j.id] } : j));
   // Queued always shows the order the build run takes them in, so the top card is the next built.
   const byStatus = (s: string) => sortJobs(jobs.filter((j) => j.status === s),
     s === 'Generate' ? { key: 'build', desc: false } : prefs.sort);

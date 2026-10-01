@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   HumanOnlyStatusError, attachJd, ingestJobs, listQueue, loadConfig, logRun, putConfig,
-  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument,
+  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument, setRoleClosed,
   setRating, setStatus, resolvePosting, boardNames, statusSetBy, fetchMissingJds,
   startUpload, addChunk, uploadInstructions, UploadError, CHUNK_CHARS, docLink,
   OUTREACH_STATUS_SQL, outreachMetrics,
@@ -110,10 +110,12 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
         .describe("only roles the person rated this or higher"),
       outreach: z.enum(['none', 'drafted', 'sent', 'replied']).optional()
         .describe('by the most advanced touch logged for the role: none, drafted, sent, or replied'),
+      closed: z.boolean().optional()
+        .describe('true for only roles marked closed, false to leave them out'),
       limit: z.number().int().min(1).max(200).default(50),
       offset: z.number().int().min(0).default(0).describe('skip this many rows, to page past the first 200'),
     },
-  }, async ({ status, min_score, since_days, missing_jd, company, q, min_rating, outreach, limit, offset }) => {
+  }, async ({ status, min_score, since_days, missing_jd, company, q, min_rating, outreach, closed, limit, offset }) => {
     const where: string[] = [];
     const binds: unknown[] = [];
     if (status) { where.push('status = ?'); binds.push(status); }
@@ -126,9 +128,10 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     if (q) { where.push('(title LIKE ? OR company LIKE ? OR location LIKE ?)'); binds.push(`%${q}%`, `%${q}%`, `%${q}%`); }
     if (min_rating != null) { where.push('rating >= ?'); binds.push(min_rating); }
     if (outreach) { where.push(`${OUTREACH_STATUS_SQL('v_pipeline.id')} = ?`); binds.push(outreach); }
+    if (closed != null) where.push(closed ? 'role_closed_at IS NOT NULL' : 'role_closed_at IS NULL');
     const sql = `SELECT id, title, company, location, salary, url, source, source_job_id, score, rating,
                         archetype, status, status_changed_at, created_at, applied_at, next_interview_at,
-                        closes_at, closes_source, resume_count, cl_count,
+                        closes_at, closes_source, role_closed_at, resume_count, cl_count,
                         (SELECT CASE WHEN h.actor = 'automation' THEN 'automation' ELSE 'you' END
                            FROM status_history h WHERE h.job_id = v_pipeline.id AND h.to_status = v_pipeline.status
                            ORDER BY h.id DESC LIMIT 1) AS status_set_by,
@@ -194,6 +197,28 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
       }
       return fail(String(e));
     }
+  });
+
+  server.registerTool('mark_closed', {
+    description: 'Record that a role closed: the posting says it is no longer accepting '
+      + 'applications, the role was filled, or the person says so. Closing leaves the status alone '
+      + '(an application that went out still counts) and takes the role out of the build queue, the '
+      + 'active board and follow-ups. A run may close a role when the posting itself says it is '
+      + 'closed, with the posting\'s words in `note`; a 404 or expired link is Dead link, not '
+      + 'closed. Only the person reopens a role: pass closed false with their words as user_statement.',
+    inputSchema: {
+      id: z.string(),
+      closed: z.boolean().default(true),
+      note: z.string().optional().describe('what showed it closed, quoted from the posting'),
+      user_statement: z.string().min(4).optional()
+        .describe("the person's own words in this chat, quoted exactly"),
+    },
+  }, async ({ id, closed, note, user_statement }) => {
+    try {
+      const r = await setRoleClosed(env.DB, id, closed, user_statement ? 'human-via-chat' : 'automation',
+        user_statement ? [`They said: "${user_statement}"`, note].filter(Boolean).join('\n') : note);
+      return ok(r, closed ? 'Marked closed.' : 'Reopened.');
+    } catch (e) { return fail(String(e)); }
   });
 
   server.registerTool('mark_applied', {

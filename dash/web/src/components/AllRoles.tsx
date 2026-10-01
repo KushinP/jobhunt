@@ -198,7 +198,7 @@ export function AllRoles({ search, only, onClearOnly }: {
                   <ScoreBadge score={j.score} />
                 </span>
                 <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                  <span className="text-fg">{statusLabel(j.status)}</span>
+                  <span className="text-fg">{statusLabel(j.status)}{j.role_closed_at ? ' · closed' : ''}</span>
                   <OutreachBadge value={j.outreach_status} />
                   {j.salary && <span className="tabular-nums">{j.salary}</span>}
                   {j.closes_at && <Closes at={j.closes_at} source={j.closes_source} />}
@@ -249,7 +249,7 @@ export function AllRoles({ search, only, onClearOnly }: {
                     <span className="line-clamp-2" title={j.location ?? ''}>{j.location || <span className="text-muted">-</span>}</span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs group-hover:bg-panel">
-                    {statusLabel(j.status)}
+                    {statusLabel(j.status)}{j.role_closed_at ? ' · closed' : ''}
                     <OutreachBadge value={j.outreach_status} />
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-muted group-hover:bg-panel">{shortDate(j.created_at)}</td>

@@ -2,7 +2,7 @@ import {
   addManualJob, checkClaims, deleteBaseResume, deleteGoal, exchangeGoogleCode,
   extractDocxText, getBaseResume, getDocument, googleAuthUrl, listBaseResumes,
   listGoals, loadConfig, onboardingStatus, pipelineFlow, putConfig, recordSubmission, refreshFollowUps,
-  saveBaseResume, setRating, setStatus, signState, updateJobDetails, upsertGoal, verifyState,
+  saveBaseResume, setRating, setRoleClosed, setStatus, signState, updateJobDetails, upsertGoal, verifyState,
   deleteEvidence, evidenceSummary, listEvidence, savePreferences, setEvidenceStatus,
   upsertEvidence, SOURCES, FEATURE_CONNECTORS, resolvePosting, boardNames, buildOnePrompt, dedupeKeys, deleteDocument,
   getCompany, upsertCompany, INDUSTRIES, STAGES, forbiddenProfileField, scheduledTaskPrompts, toIsoDate, CONFIRMABLE_STEPS, confirmSetupStep,
@@ -223,7 +223,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       env.DB.prepare(
         `SELECT id, title, company, location, salary, url, source, score, score_breakdown,
                 archetype, status, created_at, applied_at, next_interview_at, interview_count,
-                status_changed_at, posted_at, closes_at, closes_source,
+                status_changed_at, posted_at, closes_at, closes_source, role_closed_at,
                 ${OUTREACH_STATUS_SQL('v_pipeline.id')} AS outreach_status,
                 resume_count, cl_count, followups_due, drop_reason, rating, rating_gap,
                 c.industry AS company_industry, c.stage AS company_stage,
@@ -408,6 +408,17 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // A role closing (no longer taking applications, or filled) is recorded on the role, not as
+  // a status, so an application that went out still counts as one.
+  if (seg[1] === 'jobs' && seg[3] === 'closed' && method === 'POST') {
+    const body = await request.json().catch(() => ({})) as { closed?: boolean; note?: string };
+    try {
+      return json(await setRoleClosed(env.DB, seg[2], body.closed !== false, 'human', body.note));
+    } catch (e) {
+      return bad(String(e).replace(/^Error:\s*/, ''), 409);
+    }
+  }
+
   // Marking applied snapshots which exact documents went out, then flips the status.
   // The snapshot is what interview prep reads weeks later, when the tailored folders
   // have drifted.
@@ -455,9 +466,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (pathname === '/api/flow') {
     const { results } = await env.DB.prepare(
-      'SELECT id, status, drop_reason, resume_count, interview_count FROM v_pipeline',
+      'SELECT id, status, drop_reason, resume_count, interview_count, role_closed_at FROM v_pipeline',
     ).all<{ id: string; status: string; drop_reason: string | null;
-            resume_count: number; interview_count: number }>();
+            resume_count: number; interview_count: number; role_closed_at: string | null }>();
     return json(pipelineFlow(results));
   }
 

@@ -19,6 +19,8 @@ export interface Job {
   closes_at?: string | null;
   /** "stated" by the posting, the "listing" expiry a job board sets, or set by "you" */
   closes_source?: 'stated' | 'listing' | 'you' | null;
+  /** when the role closed (no longer taking applications, or filled); null while open */
+  role_closed_at?: string | null;
   next_interview_at: string | null;
   interview_count: number;
   resume_count: number;
@@ -215,6 +217,10 @@ export const api = {
   setStatus: (id: string, status: string, note?: string) =>
     req<unknown>(`/api/jobs/${id}/status`, {
       method: 'POST', body: JSON.stringify({ status, note }),
+    }),
+  setClosed: (id: string, closed: boolean, note?: string) =>
+    req<{ id: string; role_closed_at: string | null }>(`/api/jobs/${id}/closed`, {
+      method: 'POST', body: JSON.stringify({ closed, note }),
     }),
   apply: (id: string, portal_url?: string, notes?: string) =>
     req<unknown>(`/api/jobs/${id}/apply`, {

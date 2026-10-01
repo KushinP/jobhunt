@@ -18,7 +18,9 @@
     "build:web": "npm --prefix dash/web run build",
     "deploy:mcp": "wrangler deploy --config mcp/wrangler.jsonc",
     "deploy:dash": "npm run build:web && wrangler deploy --config dash/wrangler.jsonc",
-    "e2e": "python3 ../docs/e2e_mcp.py && python3 ../docs/e2e_dash.py"
+    "e2e": "python3 ../docs/e2e_mcp.py && python3 ../docs/e2e_dash.py",
+    "ci:build:mcp": "node tools/write-wrangler-config.mjs mcp",
+    "ci:build:dash": "npm --prefix dash/web ci && npm run build:web && node tools/write-wrangler-config.mjs dash"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260917.1",

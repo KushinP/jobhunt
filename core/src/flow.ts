@@ -30,6 +30,8 @@ export interface FlowRow {
   drop_reason: string | null;
   resume_count: number;
   interview_count: number;
+  /** set when the role closed: the employer stopped taking applications or filled it */
+  role_closed_at?: string | null;
 }
 
 interface Def { label: string; tone: FlowTone; parent: string | null; statuses?: string[] }
@@ -45,6 +47,7 @@ const TREE: Record<string, Def> = {
   waiting:            { label: 'Waiting on you', tone: 'idle', parent: 'kept', statuses: ['New'] },
   skipped:            { label: 'Skipped', tone: 'loss', parent: 'kept', statuses: ['Skip'] },
   dead:               { label: 'Dead link', tone: 'idle', parent: 'kept', statuses: ['Dead link', 'Unverified'] },
+  closed:             { label: 'Role closed', tone: 'loss', parent: 'kept' },
 
   'discard:location': { label: 'Wrong location', tone: 'loss', parent: 'discarded', statuses: ['Discarded'] },
   'discard:level':    { label: 'Too senior', tone: 'loss', parent: 'discarded', statuses: ['Discarded'] },
@@ -61,6 +64,7 @@ const TREE: Record<string, Def> = {
   interviewed:        { label: 'Interviewed', tone: 'progress', parent: 'applied' },
   awaiting:           { label: 'Awaiting reply', tone: 'stalled', parent: 'applied', statuses: ['Applied'] },
   rejected_cold:      { label: 'Rejected', tone: 'loss', parent: 'applied', statuses: ['Rejected'] },
+  closed_applied:     { label: 'Role closed', tone: 'loss', parent: 'applied', statuses: ['Applied'] },
 
   offer:              { label: 'Offer', tone: 'win', parent: 'interviewed', statuses: ['Offer'] },
   in_process:         { label: 'In process', tone: 'stalled', parent: 'interviewed', statuses: ['Interviewing'] },
@@ -79,6 +83,12 @@ function discardReason(reason: string | null): string {
 
 /** The single deepest stage this role reached. Everything above it is implied. */
 export function leafFor(row: FlowRow): string {
+  // A closed role stops where it was, unless an outcome already came back: an interview,
+  // offer or rejection says more than the posting closing does.
+  if (row.role_closed_at && row.status !== 'Discarded') {
+    if (row.status === 'Applied') return 'closed_applied';
+    if (!['Interviewing', 'Offer', 'Rejected'].includes(row.status)) return 'closed';
+  }
   switch (row.status) {
     case 'Discarded': return discardReason(row.drop_reason);
     case 'New': return 'waiting';

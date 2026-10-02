@@ -358,7 +358,8 @@ test('senior titles are discarded, but associate-level manager titles are not', 
   }
   for (const title of ['Associate Product Manager', 'Associate Manager, Business Operations', 'Chief of Staff',
     'Implementation Manager', 'Associate Asset Manager', 'Member of Operations Staff, Finance & Business Operations',
-    'Member of Technical Staff']) {
+    'Member of Technical Staff', 'Analyst/Sr. Analyst, Real Estate', 'Strategy and Operations Associate/Sr Associate',
+    'Financial Analyst or Senior Financial Analyst', 'Associate - Commercial Real Estate Portfolio Manager']) {
     const r = scoreJob(cfg, { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
     assert.notEqual(r.drop_reason, 'level mismatch: senior title', title);
   }

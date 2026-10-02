@@ -120,8 +120,11 @@ export function scoreJob(
   const tooManyYears = yearsRequired != null && yearsRequired > maxYears;
   // "Associate Product Manager", "Associate Asset Manager" and "Member of Operations Staff" are
   // early-career titles: the level word is qualified by what comes before it.
+  // "Analyst/Sr. Analyst" and "Financial Analyst or Senior Financial Analyst" are open at the
+  // junior level too, so the senior alternative is not read as the role's level.
   const levelTitle = hayTitle
-    .replace(/\bassociate(?:\s+[a-z&]+){0,2}\s+manager\b/g, ' ')
+    .replace(/(?:\/|\bor\b)\s*(?:sr|senior)\.?\s+(?:[a-z&]+\s+){0,3}?(?:analyst|associate|consultant)\b/g, ' ')
+    .replace(/\bassociate(?:\s+[a-z&-]+){0,5}?\s+manager\b/g, ' ')
     .replace(/\bmember of(?:\s+[a-z&]+){0,2}\s+staff\b/g, ' ');
   const seniorTitle = hitOutside(levelTitle, cfg.too_senior_terms, targetTitleTerms) && !hasOverride;
   const levelMismatch = seniorTitle || tooManyYears;

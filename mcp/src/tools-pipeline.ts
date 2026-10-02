@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   HumanOnlyStatusError, attachJd, ingestJobs, listQueue, loadConfig, logRun, putConfig,
-  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument, setRoleClosed,
+  addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument, setRoleClosed, markNotAFit, notFitMetrics, NOT_FIT_REASONS,
   setRating, setStatus, resolvePosting, boardNames, statusSetBy, fetchMissingJds,
   startUpload, addChunk, uploadInstructions, UploadError, CHUNK_CHARS, docLink,
   OUTREACH_STATUS_SQL, outreachMetrics,
@@ -131,7 +131,7 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     if (closed != null) where.push(closed ? 'role_closed_at IS NOT NULL' : 'role_closed_at IS NULL');
     const sql = `SELECT id, title, company, location, salary, url, source, source_job_id, score, rating,
                         archetype, status, status_changed_at, created_at, applied_at, next_interview_at,
-                        closes_at, closes_source, role_closed_at, resume_count, cl_count,
+                        closes_at, closes_source, role_closed_at, not_fit_reason, resume_count, cl_count,
                         (SELECT CASE WHEN h.actor = 'automation' THEN 'automation' ELSE 'you' END
                            FROM status_history h WHERE h.job_id = v_pipeline.id AND h.to_status = v_pipeline.status
                            ORDER BY h.id DESC LIMIT 1) AS status_set_by,
@@ -218,6 +218,26 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
       const r = await setRoleClosed(env.DB, id, closed, user_statement ? 'human-via-chat' : 'automation',
         user_statement ? [`They said: "${user_statement}"`, note].filter(Boolean).join('\n') : note);
       return ok(r, closed ? 'Marked closed.' : 'Reopened.');
+    } catch (e) { return fail(String(e)); }
+  });
+
+  server.registerTool('mark_not_a_fit', {
+    description: 'Record the person\'s verdict that a role is not a fit, with why. It moves to Skip '
+      + 'and keeps the reason, which the weekly review counts to say what the scorer keeps letting '
+      + 'through. Only when the person says so in this chat, quoting them in user_statement; a run '
+      + 'that removes a role uses set_status Skip instead. Refused for a role already applied to.',
+    inputSchema: {
+      id: z.string(),
+      reason: z.enum(Object.keys(NOT_FIT_REASONS) as [keyof typeof NOT_FIT_REASONS, ...(keyof typeof NOT_FIT_REASONS)[]])
+        .describe(Object.entries(NOT_FIT_REASONS).map(([k, v]) => `${k}: ${v}`).join('; ')),
+      user_statement: z.string().min(4).describe("the person's own words in this chat, quoted exactly"),
+      note: z.string().optional(),
+    },
+  }, async ({ id, reason, user_statement, note }) => {
+    try {
+      const r = await markNotAFit(env.DB, id, reason, 'human-via-chat',
+        [`They said: "${user_statement}"`, note].filter(Boolean).join('. '));
+      return ok(r, `Not a fit (${NOT_FIT_REASONS[reason]}). Moved to Skip.`);
     } catch (e) { return fail(String(e)); }
   });
 
@@ -633,20 +653,22 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
     description: 'Funnel health: weekly activity, performance by source, whether the score '
       + 'actually predicts interviews, and outreach (accept and reply rates, which hooks and '
       + 'which kinds of contact answer, and whether applying with outreach interviews better than '
-      + 'applying without). If the calibration table is flat, the weights are decoration and '
+      + 'applying without), and `not_a_fit`: the person\'s not-a-fit verdicts by reason, with how '
+      + 'many came out of the build queue. If the calibration table is flat, the weights are decoration and '
       + 'should be retuned. A true `outreach.warning` means the messages are not working.',
     inputSchema: {},
   }, async () => {
-    const [weekly, sources, calib, counts, outreach] = await Promise.all([
+    const [weekly, sources, calib, counts, outreach, notFit] = await Promise.all([
       env.DB.prepare('SELECT * FROM v_weekly_activity LIMIT 12').all(),
       env.DB.prepare('SELECT * FROM v_source_performance').all(),
       env.DB.prepare('SELECT * FROM v_score_calibration').all(),
       env.DB.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status').all(),
       outreachMetrics(env.DB),
+      notFitMetrics(env.DB),
     ]);
     return ok({
       by_status: counts.results, weekly: weekly.results,
-      by_source: sources.results, score_calibration: calib.results, outreach,
+      by_source: sources.results, score_calibration: calib.results, outreach, not_a_fit: notFit,
     }, outreach.warning ? outreach.warning_text : undefined);
   });
 

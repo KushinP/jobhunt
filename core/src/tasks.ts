@@ -416,7 +416,10 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     + 'this week against the weekly goal first); a goal list_goals marks not measurable is named '
     + 'once as "not tracked", with no number. Then responses and interviews, which sources convert, '
     + 'and whether the score bands show a real gradient (if they are flat, say the weights are not '
-    + 'predicting anything).',
+    + 'predicting anything). Then `not_a_fit`: for each reason marked twice or more, name the roles '
+    + '(`list_pipeline` status "Skip" and read their not_fit_reason) and propose the one config change '
+    + 'that would have kept them out (a title or content term, max_years_required, missing_skills, '
+    + 'exclude_companies). Propose it; do not apply it, since the person decides what to filter.',
     'STEP 3. `get_plan`, then report applications and interviews by the plan\'s tracks, as the plan '
     + 'names them. Apply any decision rule the plan sets (such as a week-4 rule) when it is due.',
     'STEP 4. Where work is stuck, oldest first.',

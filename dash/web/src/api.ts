@@ -21,6 +21,8 @@ export interface Job {
   closes_source?: 'stated' | 'listing' | 'you' | null;
   /** when the role closed (no longer taking applications, or filled); null while open */
   role_closed_at?: string | null;
+  /** the person's not-a-fit verdict (a reason key), set alongside Skip */
+  not_fit_reason?: string | null;
   next_interview_at: string | null;
   interview_count: number;
   resume_count: number;
@@ -42,8 +44,19 @@ export interface Job {
 export interface TrashedJob {
   id: string; title: string; company: string; location: string | null; source: string;
   score: number | null; status: string; reason: string | null;
-  created_at: string; status_changed_at: string | null;
+  created_at: string; status_changed_at: string | null; not_fit_reason?: string | null;
 }
+
+/** Why a role should never have reached you. Keys match the server's NOT_FIT_REASONS. */
+export const NOT_FIT_REASONS: [string, string][] = [
+  ['too_senior', 'Too senior or too many years'],
+  ['wrong_function', 'Wrong kind of role'],
+  ['missing_skill', 'Needs a skill I do not have'],
+  ['location', 'Wrong location'],
+  ['pay', 'Pays too little'],
+  ['agency', 'Agency or no named employer'],
+  ['other', 'Other'],
+];
 
 export interface Resolved {
   ok: boolean; reason?: string; via: 'greenhouse' | 'lever' | 'yc' | 'schema' | 'page' | 'none';
@@ -218,6 +231,8 @@ export const api = {
     req<unknown>(`/api/jobs/${id}/status`, {
       method: 'POST', body: JSON.stringify({ status, note }),
     }),
+  notAFit: (id: string, reason: string, note?: string) =>
+    req<unknown>(`/api/jobs/${id}/not-a-fit`, { method: 'POST', body: JSON.stringify({ reason, note }) }),
   setClosed: (id: string, closed: boolean, note?: string) =>
     req<{ id: string; role_closed_at: string | null }>(`/api/jobs/${id}/closed`, {
       method: 'POST', body: JSON.stringify({ closed, note }),

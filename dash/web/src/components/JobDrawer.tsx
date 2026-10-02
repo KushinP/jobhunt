@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type Job } from '../api.ts';
+import { api, NOT_FIT_REASONS, type Job } from '../api.ts';
 import { Breakdown, Closes, ScoreBadge, STATUSES, shortDate, sourceLabel, statusLabel } from './bits.tsx';
 import { CompanyLink } from './nav.tsx';
 import { Stars } from './Stars.tsx';
@@ -52,6 +52,13 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
   const closeRole = useMutation({
     mutationFn: (closed: boolean) => api.setClosed(id, closed),
     onSuccess: () => { setErr(null); invalidate(); },
+    onError: (e: Error) => setErr(e.message),
+  });
+
+  const [notFitOpen, setNotFitOpen] = useState(false);
+  const notFit = useMutation({
+    mutationFn: (reason: string) => api.notAFit(id, reason),
+    onSuccess: () => { setErr(null); setNotFitOpen(false); invalidate(); },
     onError: (e: Error) => setErr(e.message),
   });
 
@@ -209,7 +216,35 @@ export function JobDrawer({ id, onClose }: { id: string; onClose: () => void }) 
                   className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">
                   Closed
                 </button>
+                <button type="button"
+                  disabled={!!data.job.not_fit_reason || notFit.isPending
+                    || ['Applied', 'Interviewing', 'Offer', 'Rejected'].includes(data.job.status)}
+                  onClick={() => setNotFitOpen((o) => !o)}
+                  title="This should never have reached you. Says why, so the scorer can learn from it."
+                  className={`rounded-md border px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40
+                    ${notFitOpen ? 'border-accent' : 'border-line'}`}>
+                  Not a fit
+                </button>
               </div>
+              {notFitOpen && (
+                <div className="mt-2 rounded-lg border border-line p-2.5">
+                  <p className="mb-1.5 text-xs text-muted">Why not? It goes to Trash, and the weekly review uses the reason to tune what gets through.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {NOT_FIT_REASONS.map(([key, label]) => (
+                      <button key={key} type="button" disabled={notFit.isPending} onClick={() => notFit.mutate(key)}
+                        className="rounded-full border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {data.job.not_fit_reason && (
+                <p className="mt-2 text-xs text-muted">
+                  Marked not a fit: {NOT_FIT_REASONS.find(([k]) => k === data.job.not_fit_reason)?.[1] ?? data.job.not_fit_reason}.
+                  Restore it from Trash, or move it above, to withdraw that.
+                </p>
+              )}
               <div className="mt-3 rounded-lg border border-line p-3">
                 <p className="text-xs text-muted">
                   Marking applied snapshots exactly which documents went out, so interview prep

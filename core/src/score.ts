@@ -118,9 +118,12 @@ export function scoreJob(
   const yearsRequired = statedYears(input.jd);
   const maxYears = cfg.max_years_required ?? 99;
   const tooManyYears = yearsRequired != null && yearsRequired > maxYears;
-  // "Associate Product Manager" and "Associate Manager" are early-career titles, not a level.
-  const seniorTitle = hitOutside(hayTitle, cfg.too_senior_terms,
-    [...targetTitleTerms, 'associate manager', 'associate product manager']) && !hasOverride;
+  // "Associate Product Manager", "Associate Asset Manager" and "Member of Operations Staff" are
+  // early-career titles: the level word is qualified by what comes before it.
+  const levelTitle = hayTitle
+    .replace(/\bassociate(?:\s+[a-z&]+){0,2}\s+manager\b/g, ' ')
+    .replace(/\bmember of(?:\s+[a-z&]+){0,2}\s+staff\b/g, ' ');
+  const seniorTitle = hitOutside(levelTitle, cfg.too_senior_terms, targetTitleTerms) && !hasOverride;
   const levelMismatch = seniorTitle || tooManyYears;
   const sSeniority = levelMismatch ? 0 : w.seniority;
   const missingSkill = hasJd ? missingSkillRequired(input.jd, cfg.missing_skills ?? []) : null;

@@ -351,12 +351,14 @@ test('a posting that requires more years than the limit is discarded with the fi
 
 test('senior titles are discarded, but associate-level manager titles are not', () => {
   const jdText = fullJd('Startup saas forecasting pricing unit economics financial modeling kpi dashboards.');
-  for (const title of ['Senior Business Analyst', 'Business Operations Manager', 'Implementation Consultant III']) {
+  for (const title of ['Senior Business Analyst', 'Business Operations Manager', 'Implementation Consultant III',
+    'Staff Financial Analyst', 'Senior Associate, Strategic Finance']) {
     const r = scoreJob(cfg, { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
     assert.equal(r.drop_reason, 'level mismatch: senior title', title);
   }
   for (const title of ['Associate Product Manager', 'Associate Manager, Business Operations', 'Chief of Staff',
-    'Implementation Manager']) {
+    'Implementation Manager', 'Associate Asset Manager', 'Member of Operations Staff, Finance & Business Operations',
+    'Member of Technical Staff']) {
     const r = scoreJob(cfg, { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
     assert.notEqual(r.drop_reason, 'level mismatch: senior title', title);
   }

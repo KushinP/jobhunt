@@ -2,12 +2,12 @@ import {
   addManualJob, checkClaims, deleteBaseResume, deleteGoal, exchangeGoogleCode,
   extractDocxText, getBaseResume, getDocument, googleAuthUrl, listBaseResumes,
   listGoals, loadConfig, onboardingStatus, pipelineFlow, putConfig, recordSubmission, refreshFollowUps,
-  saveBaseResume, setRating, setRoleClosed, setStatus, signState, updateJobDetails, upsertGoal, verifyState,
+  saveBaseResume, setRating, setRoleClosed, markNotAFit, setStatus, signState, updateJobDetails, upsertGoal, verifyState,
   deleteEvidence, evidenceSummary, listEvidence, savePreferences, setEvidenceStatus,
   upsertEvidence, SOURCES, FEATURE_CONNECTORS, resolvePosting, boardNames, buildOnePrompt, dedupeKeys, deleteDocument,
   getCompany, upsertCompany, INDUSTRIES, STAGES, forbiddenProfileField, scheduledTaskPrompts, toIsoDate, CONFIRMABLE_STEPS, confirmSetupStep,
   listOutreach, logOutreach, outreachDue, outreachMetrics, updateOutreach, OUTREACH_STATUS_SQL, OutreachRuleError,
-  type EvidenceInput, type GoalKind, type JobStatus,
+  type EvidenceInput, type GoalKind, type JobStatus, type NotFitReason,
 } from '@jobhunt/core';
 import {
   clearCookie, mintSession, readCookie, sessionCookie, verifySession,
@@ -190,7 +190,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (pathname === '/api/trash' && method === 'GET') {
     const { results } = await env.DB.prepare(
       `SELECT id, title, company, location, source, score, status, created_at, status_changed_at,
-              COALESCE(NULLIF(notes, ''), drop_reason) AS reason
+              not_fit_reason, COALESCE(NULLIF(notes, ''), drop_reason) AS reason
        FROM jobs WHERE status IN ('Skip', 'Discarded', 'Dead link')
        ORDER BY COALESCE(status_changed_at, created_at) DESC LIMIT 1000`,
     ).bind().all();
@@ -223,7 +223,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       env.DB.prepare(
         `SELECT id, title, company, location, salary, url, source, score, score_breakdown,
                 archetype, status, created_at, applied_at, next_interview_at, interview_count,
-                status_changed_at, posted_at, closes_at, closes_source, role_closed_at,
+                status_changed_at, posted_at, closes_at, closes_source, role_closed_at, not_fit_reason,
                 ${OUTREACH_STATUS_SQL('v_pipeline.id')} AS outreach_status,
                 resume_count, cl_count, followups_due, drop_reason, rating, rating_gap,
                 c.industry AS company_industry, c.stage AS company_stage,
@@ -403,6 +403,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       // 'human': this endpoint is only reachable from a signed-in browser session
       const r = await setStatus(env.DB, seg[2], body.status, 'human', body.note);
       return json(r);
+    } catch (e) {
+      return bad(String(e).replace(/^Error:\s*/, ''), 409);
+    }
+  }
+
+  // Not a fit: the person's verdict that the role should never have reached them, with why.
+  if (seg[1] === 'jobs' && seg[3] === 'not-a-fit' && method === 'POST') {
+    const body = await request.json().catch(() => ({})) as { reason?: string; note?: string };
+    try {
+      return json(await markNotAFit(env.DB, seg[2], (body.reason ?? '') as NotFitReason, 'human', body.note));
     } catch (e) {
       return bad(String(e).replace(/^Error:\s*/, ''), 409);
     }

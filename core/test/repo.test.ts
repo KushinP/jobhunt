@@ -7,6 +7,7 @@ import {
   ingestJobs, setStatus, rescoreJob, listQueue, saveDocument, getDocument,
   recordSubmission, refreshFollowUps, loadConfig, putConfig, setRating, addManualJob, deleteDocument,
   HumanOnlyStatusError, attachJd, statusSetBy, updateJobDetails, rescorePipeline, setRoleClosed,
+  markNotAFit, notFitMetrics,
 } from '../src/repo.ts';
 
 const cfg = DEFAULT_CONFIG;
@@ -612,4 +613,37 @@ test('a closed role keeps its status, leaves the queue and stops its follow-ups'
   await assert.rejects(setRoleClosed(db, queued, false, 'automation'), /only the person reopens/);
   await setRoleClosed(db, queued, false, 'human');
   assert.equal((await listQueue(db)).length, 1, 'reopened, it is queued again');
+});
+
+test('not a fit moves a role to Skip with its reason, and restoring withdraws it', async () => {
+  const { db, raw } = makeTestDb();
+  await ingestJobs(db, cfg, 'test', ['Queued Co', 'New Co', 'Applied Co'].map((company) => (
+    { title: 'AI Solutions Consultant', company, location: 'Boston, MA', jd_text: AI_JD })));
+  const id = (c: string) => (raw.prepare('SELECT id FROM jobs WHERE company = ?').get(c) as { id: string }).id;
+  await setStatus(db, id('New Co'), 'New', 'automation');
+
+  await markNotAFit(db, id('Queued Co'), 'too_senior', 'human', 'asks for 5 years in the body');
+  await markNotAFit(db, id('New Co'), 'too_senior', 'human-via-chat');
+  const row = raw.prepare('SELECT status, not_fit_reason, notes FROM jobs WHERE id = ?').get(id('Queued Co')) as
+    { status: string; not_fit_reason: string; notes: string };
+  assert.equal(row.status, 'Skip');
+  assert.equal(row.not_fit_reason, 'too_senior');
+  assert.match(row.notes, /^Not a fit: Too senior or too many years\. asks for 5 years/);
+
+  const m = await notFitMetrics(db);
+  assert.equal(m.total, 2);
+  assert.equal(m.from_queue, 1, 'only one came out of the build queue');
+  assert.deepEqual(m.by_reason.map((r) => [r.reason, r.n]), [['too_senior', 2]]);
+
+  await assert.rejects(markNotAFit(db, id('Applied Co'), 'pay', 'automation'), /only the person/);
+  await assert.rejects(markNotAFit(db, id('Applied Co'), 'nonsense' as never, 'human'), /reason must be one of/);
+  await saveDocument(db, { job_id: id('Applied Co'), kind: 'resume', content: new TextEncoder().encode('a'), filename: 'a.docx' });
+  await recordSubmission(db, { job_id: id('Applied Co') });
+  await setStatus(db, id('Applied Co'), 'Applied', 'human');
+  await assert.rejects(markNotAFit(db, id('Applied Co'), 'pay', 'human'), /mark it Rejected or Closed/);
+
+  await setStatus(db, id('Queued Co'), 'New', 'human', 'Restored from trash');
+  assert.equal((raw.prepare('SELECT not_fit_reason FROM jobs WHERE id = ?').get(id('Queued Co')) as
+    { not_fit_reason: string | null }).not_fit_reason, null, 'restoring withdraws the verdict');
+  assert.equal((await notFitMetrics(db)).total, 1);
 });

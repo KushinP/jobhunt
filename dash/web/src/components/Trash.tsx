@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type TrashedJob } from '../api.ts';
+import { api, NOT_FIT_REASONS, type TrashedJob } from '../api.ts';
 import { ScoreBadge, age, Empty } from './bits.tsx';
 
 const LABEL: Record<string, string> = {
@@ -90,7 +90,14 @@ export function Trash({ onOpen }: { onOpen: (id: string) => void }) {
                   <span className="block truncate text-xs text-muted">{j.company} · {j.source}</span>
                 </td>
                 <td className="max-w-[28rem] px-3 py-2 text-xs">
-                  <span className="mr-1.5 rounded bg-line px-1 py-px text-[11px]">{LABEL[j.status] ?? j.status}</span>
+                  <span className="mr-1.5 rounded bg-line px-1 py-px text-[11px]">
+                    {j.not_fit_reason ? 'Not a fit' : LABEL[j.status] ?? j.status}
+                  </span>
+                  {j.not_fit_reason && (
+                    <span className="mr-1.5 font-medium">
+                      {NOT_FIT_REASONS.find(([k]) => k === j.not_fit_reason)?.[1] ?? j.not_fit_reason}
+                    </span>
+                  )}
                   <span className="text-muted">{j.reason ?? 'no reason recorded'}</span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-xs text-muted">{age(j.status_changed_at ?? j.created_at)}</td>

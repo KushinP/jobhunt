@@ -214,10 +214,12 @@ export async function setStatus(
     }
   }
 
+  // A "not a fit" verdict belongs to the Skip it came with: restoring the role withdraws it.
   await db.prepare(
     `UPDATE jobs SET status = ?, status_changed_at = datetime('now'),
-       updated_at = datetime('now'), notes = COALESCE(?, notes) WHERE id = ?`,
-  ).bind(status, note ?? null, jobId).run();
+       updated_at = datetime('now'), notes = COALESCE(?, notes),
+       not_fit_reason = CASE WHEN ? = 'Skip' THEN not_fit_reason END WHERE id = ?`,
+  ).bind(status, note ?? null, status, jobId).run();
 
   await db.prepare(
     `INSERT INTO status_history (job_id, from_status, to_status, actor)
@@ -416,6 +418,63 @@ export async function setRoleClosed(
   const after = await db.prepare('SELECT role_closed_at FROM jobs WHERE id = ?')
     .bind(jobId).first<{ role_closed_at: string | null }>();
   return { id: jobId, role_closed_at: after?.role_closed_at ?? null };
+}
+
+/** Why a role should never have reached the person. The keys are what the weekly review counts. */
+export const NOT_FIT_REASONS = {
+  too_senior: 'Too senior or too many years',
+  wrong_function: 'Wrong kind of role',
+  missing_skill: 'Needs a skill I do not have',
+  location: 'Wrong location',
+  pay: 'Pays too little',
+  agency: 'Agency or no named employer',
+  other: 'Other',
+} as const;
+export type NotFitReason = keyof typeof NOT_FIT_REASONS;
+
+/**
+ * The person's verdict that a role is not a fit: it goes to Skip, like any pass, and keeps the
+ * reason so the weekly review can say what the scorer keeps letting through. Only the person
+ * gives this verdict; a run that removes a role uses Skip with its own note.
+ */
+export async function markNotAFit(
+  db: D1Like, jobId: string, reason: NotFitReason, actor: Actor, note?: string,
+): Promise<{ id: string; from: JobStatus; to: JobStatus; reason: NotFitReason }> {
+  if (actor === 'automation') throw new Error('only the person marks a role not a fit; a run uses Skip');
+  if (!(reason in NOT_FIT_REASONS)) {
+    throw new Error(`reason must be one of: ${Object.keys(NOT_FIT_REASONS).join(', ')}`);
+  }
+  const row = await db.prepare('SELECT status FROM jobs WHERE id = ?').bind(jobId).first<{ status: JobStatus }>();
+  if (!row) throw new Error(`no such job ${jobId}`);
+  if (HUMAN_ONLY_STATUSES.includes(row.status)) {
+    throw new Error(`the role is ${row.status}; an application already went out, so mark it Rejected or Closed instead`);
+  }
+  const text = [`Not a fit: ${NOT_FIT_REASONS[reason]}`, note?.trim()].filter(Boolean).join('. ');
+  const r = await setStatus(db, jobId, 'Skip', actor, text);
+  await db.prepare('UPDATE jobs SET not_fit_reason = ? WHERE id = ?').bind(reason, jobId).run();
+  return { ...r, reason };
+}
+
+/** Not-a-fit verdicts by reason, and how many were taken out of the build queue: those are
+ * roles the scorer judged good enough to spend documents on. */
+export async function notFitMetrics(db: D1Like): Promise<{
+  total: number; from_queue: number;
+  by_reason: { reason: string; label: string; n: number; from_queue: number }[];
+}> {
+  const { results } = await db.prepare(
+    `SELECT j.not_fit_reason AS reason, COUNT(*) AS n,
+       SUM(EXISTS (SELECT 1 FROM status_history h WHERE h.job_id = j.id
+                   AND h.to_status = 'Skip' AND h.from_status = 'Generate')) AS from_queue
+     FROM jobs j WHERE j.not_fit_reason IS NOT NULL GROUP BY j.not_fit_reason ORDER BY n DESC`,
+  ).all<{ reason: string; n: number; from_queue: number }>();
+  const by_reason = results.map((r) => ({
+    ...r, label: NOT_FIT_REASONS[r.reason as NotFitReason] ?? r.reason, from_queue: Number(r.from_queue ?? 0),
+  }));
+  return {
+    total: by_reason.reduce((a, r) => a + r.n, 0),
+    from_queue: by_reason.reduce((a, r) => a + r.from_queue, 0),
+    by_reason,
+  };
 }
 
 export interface RescoreMove {

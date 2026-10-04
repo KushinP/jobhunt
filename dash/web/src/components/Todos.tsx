@@ -25,6 +25,9 @@ const GROUPS: { key: string; label: string; kinds?: TodoItemKind[] }[] = [
   { key: 'apply', label: 'Applications', kinds: ['closing', 'ready'] },
 ];
 
+/** How many ready-to-submit roles Everything shows before "show all". */
+const READY_CAP = 5;
+
 const timeOf = (iso: string) => new Date(iso).toLocaleString('en-US', {
   weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
 });
@@ -39,6 +42,7 @@ export function Todos({ onTab }: { onTab: (tab: 'outreach') => void }) {
   const qc = useQueryClient();
   const [group, setGroup] = useState('all');
   const [adding, setAdding] = useState(false);
+  const [allReady, setAllReady] = useState(false);
   const { data, isLoading, error } = useQuery({ queryKey: ['todos'], queryFn: api.todos, staleTime: 60_000 });
 
   const refresh = () => {
@@ -49,7 +53,18 @@ export function Todos({ onTab }: { onTab: (tab: 'outreach') => void }) {
   if (error || !data) return <Empty>Could not load the list: {String(error)}</Empty>;
 
   const kinds = GROUPS.find((g) => g.key === group)?.kinds;
-  const keep = (xs: TodoItem[]) => (kinds ? xs.filter((x) => kinds.includes(x.kind)) : xs);
+  // Built roles waiting to submit can run to dozens; in Everything they are capped so they do
+  // not bury the drafts and to-dos beside them. Applications shows them all.
+  const readyTotal = data.anytime.filter((x) => x.kind === 'ready').length;
+  const capReady = group === 'all' && !allReady && readyTotal > READY_CAP;
+  const keep = (xs: TodoItem[]) => {
+    let out = kinds ? xs.filter((x) => kinds.includes(x.kind)) : xs;
+    if (capReady) {
+      let n = 0;
+      out = out.filter((x) => x.kind !== 'ready' || n++ < READY_CAP);
+    }
+    return out;
+  };
   const sections = [
     { key: 'overdue', title: 'Overdue', items: keep(data.overdue), tone: 'text-risk' },
     { key: 'today', title: 'Today', items: keep(data.today_items), tone: '' },
@@ -96,6 +111,12 @@ export function Todos({ onTab }: { onTab: (tab: 'outreach') => void }) {
                 <Row key={item.key} item={item} today={data.today} onChanged={refresh} onTab={onTab} />
               ))}
             </ul>
+            {s.key === 'anytime' && capReady && (
+              <button type="button" onClick={() => setAllReady(true)}
+                className="mt-1.5 rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent">
+                Show all {readyTotal} roles ready to submit
+              </button>
+            )}
           </section>
         ))}
         {data.swept_outreach.length > 0 && (

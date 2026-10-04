@@ -16,7 +16,7 @@
   ],
   "shortcuts": [
     { "name": "Pipeline", "url": "/?tab=board" },
-    { "name": "Due today", "url": "/?tab=outreach" },
+    { "name": "To do", "url": "/?tab=todos" },
     { "name": "All roles", "url": "/?tab=list" }
   ]
 }

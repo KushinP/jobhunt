@@ -5,6 +5,9 @@ import { Closes, ScoreBadge, age, Empty } from './bits.tsx';
 import { CompanyLink } from './nav.tsx';
 import { Stars } from './Stars.tsx';
 import { BOARD_PRESETS, type Sort, presetFor, sortJobs, usePersisted } from './sort.ts';
+import {
+  ROLE_FILTER_DEFAULTS, RoleFilterBar, type RoleFilterState, applyRoleFilters, filtering,
+} from './RoleFilters.tsx';
 
 const COLUMNS: { key: string; label: string; hint: string }[] = [
   { key: 'New', label: 'New', hint: 'Matches a target role but not queued: below the auto bar, too senior, or waiting for a JD. Your call.' },
@@ -13,6 +16,10 @@ const COLUMNS: { key: string; label: string; hint: string }[] = [
   { key: 'Applied', label: 'Applied', hint: 'Submitted, waiting.' },
   { key: 'Interviewing', label: 'Interviewing', hint: 'In process.' },
 ];
+
+/** The board shows avoided companies by default: a role there that reached Applied or
+ * Interviewing is one you chose, and should not vanish from the pipeline unasked. */
+const BOARD_FILTERS: RoleFilterState = { ...ROLE_FILTER_DEFAULTS, hideAvoided: false };
 
 /** A move waiting for the person to confirm: marking applied records what went out. */
 interface Pending { job: Job; to: string }
@@ -24,7 +31,9 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
     queryKey: ['jobs', 'board', search],
     queryFn: () => api.jobs({ status: COLUMNS.map((c) => c.key), q: search || undefined }),
   });
-  const [prefs, setPrefs] = usePersisted<{ sort: Sort }>('jobhunt.board.v1', { sort: { key: 'score', desc: true } });
+  const [prefs, setPrefs] = usePersisted<{ sort: Sort } & RoleFilterState>('jobhunt.board.v1',
+    { sort: { key: 'score', desc: true }, ...BOARD_FILTERS });
+  const setFilter = (patch: Partial<RoleFilterState>) => setPrefs((p) => ({ ...p, ...patch }));
   const [dragging, setDragging] = useState<Job | null>(null);
   const [over, setOver] = useState<string | null>(null);
   // Where a card was dropped, shown straight away and dropped again once the server answers.
@@ -42,7 +51,8 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
   if (error) return <Empty>Could not load the pipeline: {String(error)}</Empty>;
 
   // A closed role leaves the board, as a skipped one does; All Roles still lists it, marked closed.
-  const jobs = (data?.rows ?? []).filter((j) => !j.role_closed_at)
+  const open = (data?.rows ?? []).filter((j) => !j.role_closed_at);
+  const jobs = applyRoleFilters(open, prefs)
     .map((j) => (moved[j.id] ? { ...j, status: moved[j.id] } : j));
   // Queued always shows the order the build run takes them in, so the top card is the next built.
   const byStatus = (s: string) => sortJobs(jobs.filter((j) => j.status === s),
@@ -99,22 +109,31 @@ export function Board({ onOpen, search }: { onOpen: (id: string) => void; search
 
   return (
     <div className="app-pane">
-      <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-muted">
-        <span>
-          <span className="pointer-coarse:hidden">Drag a card to another column to move it.</span>
-          <span className="hidden pointer-coarse:inline">Open a role to move it.</span>
-        </span>
-        <label className="flex items-center gap-1.5">
+      <div className="-mx-4 mb-2 flex shrink-0 items-center gap-2 overflow-x-auto px-4 pb-0.5 text-xs text-muted
+                      [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+        <label className="flex shrink-0 items-center gap-1.5">
           <span className="hidden sm:inline">Sort the other columns</span>
           <span className="sm:hidden">Sort</span>
           <select value={presetFor(prefs.sort) || 'best'} className={select} aria-label="Sort cards"
             onChange={(e) => {
               const p = BOARD_PRESETS.find((x) => x.key === e.target.value);
-              if (p) setPrefs({ sort: p.sort });
+              if (p) setPrefs((prev) => ({ ...prev, sort: p.sort }));
             }}>
             {BOARD_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
+        <RoleFilterBar f={prefs} set={setFilter} jobs={open} />
+        {filtering(prefs, BOARD_FILTERS) && (
+          <span className="shrink-0">
+            {jobs.length} of {open.length} shown
+            <button type="button" onClick={() => setFilter(BOARD_FILTERS)}
+              className="ml-1.5 underline underline-offset-2 hover:text-fg">clear</button>
+          </span>
+        )}
+        <span className="ml-auto shrink-0">
+          <span className="pointer-coarse:hidden">Drag a card to another column to move it.</span>
+          <span className="hidden pointer-coarse:inline">Open a role to move it.</span>
+        </span>
       </div>
 
       {/* A kanban board: columns sit side by side and each scrolls on its own. An empty column

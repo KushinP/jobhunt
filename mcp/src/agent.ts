@@ -7,6 +7,7 @@ import { registerSetupTools } from './tools-setup.ts';
 import { registerEvidenceTools } from './tools-evidence.ts';
 import { registerLibraryTools } from './tools-library.ts';
 import { registerOutreachTools } from './tools-outreach.ts';
+import { registerTodoTools } from './tools-todos.ts';
 import { fail } from './env.ts';
 
 export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
@@ -43,6 +44,9 @@ export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
         + 'records what happened, and Sent, Accepted, Replied and Meeting need their own words. '
         + 'get_outreach_due says what is owed today. Nothing in JobHunt sends, connects or posts.',
       '',
+      'TO-DOS. get_todos is everything owed today in one list. A HireVue, assessment or take-home '
+        + 'with a deadline goes in add_todo; an interview with a time goes in record_interview.',
+      '',
       'DOCUMENTS. No em dashes; date ranges MM/YYYY - MM/YYYY.',
     ].join('\n'),
   });
@@ -66,5 +70,6 @@ export class JobHuntMCP extends McpAgent<Env, never, AuthProps> {
     registerEvidenceTools(this.server, this.env);
     registerLibraryTools(this.server, this.env);
     registerOutreachTools(this.server, this.env);
+    registerTodoTools(this.server, this.env);
   }
 }

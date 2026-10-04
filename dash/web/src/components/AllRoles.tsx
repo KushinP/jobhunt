@@ -7,6 +7,7 @@ import {
 import { CompanyLink, useNav } from './nav.tsx';
 import { OutreachBadge } from './bits.tsx';
 import { Stars } from './Stars.tsx';
+import { ROLE_FILTER_DEFAULTS, RoleFilterBar, type RoleFilterState, applyRoleFilters } from './RoleFilters.tsx';
 import {
   SORT_PRESETS, type Sort, type SortKey, firstDirection, presetFor, sortJobs, usePersisted,
 } from './sort.ts';
@@ -42,17 +43,8 @@ const FIRST = 300;
  * height, and wraps normally on wider screens. */
 const ROW = '-mx-4 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden';
 
-/** the "Uncategorized" option in industry filters */
-const NONE = '__none';
-
-interface Filters {
-  scope: string; family: string; source: string; industry: string;
-  targetOnly: boolean; hideAvoided: boolean; sort: Sort;
-}
-const DEFAULTS: Filters = {
-  scope: 'all', family: '', source: '', industry: '', targetOnly: false, hideAvoided: true,
-  sort: { key: 'score', desc: true },
-};
+interface Filters extends RoleFilterState { scope: string; sort: Sort }
+const DEFAULTS: Filters = { ...ROLE_FILTER_DEFAULTS, scope: 'all', sort: { key: 'score', desc: true } };
 
 /**
  * Every role JobHunt has seen, in one table: salary, when it was found, when you applied and
@@ -81,7 +73,6 @@ export function AllRoles({ search, only, onClearOnly }: {
   });
 
   const all = data?.rows ?? [];
-  const sources = useMemo(() => [...new Set(all.map((j) => j.source))].sort(), [all]);
 
   const rows = useMemo(() => {
     let list = all;
@@ -89,18 +80,10 @@ export function AllRoles({ search, only, onClearOnly }: {
       const want = new Set(only.ids);
       list = list.filter((j) => want.has(j.id));
     }
-    if (f.family) list = list.filter((j) => String(j.archetype) === f.family);
-    if (f.source) list = list.filter((j) => j.source === f.source);
-    if (f.industry) list = list.filter((j) => (f.industry === NONE ? !j.company_industry : j.company_industry === f.industry));
-    if (f.targetOnly) list = list.filter((j) => j.company_priority === 'target');
-    else if (f.hideAvoided && !only) list = list.filter((j) => j.company_priority !== 'avoid');
-    return sortJobs(list, f.sort, familyName);
+    return sortJobs(applyRoleFilters(list, f, !!only), f.sort, familyName);
     // familyName only changes when bootstrap loads
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, only, f, families]);
-  const avoidedHere = f.hideAvoided && !f.targetOnly && !only
-    ? all.filter((j) => j.company_priority === 'avoid').length : 0;
-  const industries = boot.data?.industries ?? [];
   const withSalary = rows.filter((j) => j.salary).length;
 
   const select = 'shrink-0 rounded-md border border-line bg-panel px-2 py-1 text-xs outline-none focus:border-accent';
@@ -149,29 +132,7 @@ export function AllRoles({ search, only, onClearOnly }: {
             {SORT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
-        <select value={f.family} onChange={(e) => set({ family: e.target.value })} className={select} aria-label="Role family">
-          <option value="">All families</option>
-          {families.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <select value={f.source} onChange={(e) => set({ source: e.target.value })} className={select} aria-label="Source">
-          <option value="">All sources</option>
-          {sources.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={f.industry} onChange={(e) => set({ industry: e.target.value })} className={select} aria-label="Company industry">
-          <option value="">All industries</option>
-          {industries.map((i) => <option key={i} value={i}>{i}</option>)}
-          <option value={NONE}>Uncategorized</option>
-        </select>
-        <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
-          <input type="checkbox" checked={f.targetOnly} onChange={(e) => set({ targetOnly: e.target.checked })} />
-          Target companies only
-        </label>
-        {!f.targetOnly && (
-          <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
-            <input type="checkbox" checked={f.hideAvoided} onChange={(e) => set({ hideAvoided: e.target.checked })} />
-            Hide companies you avoid{avoidedHere ? ` (${avoidedHere})` : ''}
-          </label>
-        )}
+        <RoleFilterBar f={f} set={set} jobs={all} keepAvoided={!!only} />
       </div>
 
       {isLoading ? <Empty>Loading…</Empty> : rows.length === 0 ? (

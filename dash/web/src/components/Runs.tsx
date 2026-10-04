@@ -74,6 +74,21 @@ function health(r: Run, kind: Kind): { tone: 'ok' | 'warn' | 'bad'; label: strin
   return { tone: 'ok', label: 'Clean' };
 }
 
+/** Narrows the list by how a run went. "Errors" is what broke; "issues" adds sources that
+ * could not run, which is often a connector being off rather than anything failing. */
+type Outcome = 'any' | 'errors' | 'issues';
+const OUTCOMES: { key: Outcome; label: string }[] = [
+  { key: 'any', label: 'Any outcome' },
+  { key: 'errors', label: 'Errored or stopped' },
+  { key: 'issues', label: 'Any issue' },
+];
+function matches(r: Run, kind: Kind, outcome: Outcome): boolean {
+  if (outcome === 'any') return true;
+  const h = health(r, kind);
+  if (outcome === 'issues') return h.tone !== 'ok';
+  return h.tone === 'bad' || parseList(r.errors).length > 0;
+}
+
 const TONE = {
   ok: 'border-good/40 bg-good/10 text-good',
   warn: 'border-warn/40 bg-warn/10 text-warn',
@@ -88,6 +103,7 @@ const TONE = {
 export function Runs() {
   const { data, isLoading } = useQuery({ queryKey: ['runs'], queryFn: api.runs });
   const [filter, setFilter] = useState<Kind | 'all'>('all');
+  const [outcome, setOutcome] = useState<Outcome>('any');
   const runs = useMemo(() => (data ?? []).map((r) => ({ r, kind: kindOf(r), at: when(r.started_at) })), [data]);
 
   if (isLoading) return <Empty>Loading…</Empty>;
@@ -95,7 +111,9 @@ export function Runs() {
     return <Empty>No runs recorded yet. The scheduled tasks log here each time they run.</Empty>;
   }
 
-  const shown = runs.filter((x) => filter === 'all' || x.kind === filter);
+  const ofKind = runs.filter((x) => filter === 'all' || x.kind === filter);
+  const shown = ofKind.filter((x) => matches(x.r, x.kind, outcome));
+  const countFor = (o: Outcome) => ofKind.filter((x) => matches(x.r, x.kind, o)).length;
   const days: { key: string; label: string; items: typeof runs }[] = [];
   for (const x of shown) {
     const key = dayKey(x.at);
@@ -135,11 +153,22 @@ export function Runs() {
             {k === 'all' ? 'All runs' : KINDS[k].label}
           </button>
         ))}
-        <span className="ml-auto text-xs text-muted">{shown.length} runs</span>
+        <span className="mx-1 hidden h-4 w-px bg-line sm:inline-block" />
+        {OUTCOMES.map((o) => (
+          <button key={o.key} type="button" onClick={() => setOutcome(o.key)}
+            className={`rounded-full border px-2.5 py-0.5 text-xs ${outcome === o.key
+              ? o.key === 'any' ? 'border-accent bg-accent/10 text-fg' : 'border-risk/50 bg-risk/10 text-risk'
+              : 'border-line text-muted hover:text-fg'}`}>
+            {o.label}{o.key !== 'any' ? ` (${countFor(o.key)})` : ''}
+          </button>
+        ))}
+        <span className="ml-auto text-xs text-muted">{shown.length} of the last {runs.length} runs</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-line">
-        {days.length === 0 && <Empty>No runs of this kind yet.</Empty>}
+        {days.length === 0 && (
+          <Empty>{outcome === 'any' ? 'No runs of this kind yet.' : 'None of these runs had problems.'}</Empty>
+        )}
         {days.map((d) => (
           <section key={d.key}>
             <h3 className="sticky top-0 z-[1] border-b border-line bg-panel px-3 py-1.5 text-xs font-semibold text-muted">{d.label}</h3>

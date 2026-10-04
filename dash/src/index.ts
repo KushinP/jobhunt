@@ -7,6 +7,7 @@ import {
   upsertEvidence, SOURCES, FEATURE_CONNECTORS, resolvePosting, boardNames, buildOnePrompt, dedupeKeys, deleteDocument,
   getCompany, upsertCompany, INDUSTRIES, STAGES, forbiddenProfileField, scheduledTaskPrompts, toIsoDate, CONFIRMABLE_STEPS, confirmSetupStep,
   listOutreach, logOutreach, outreachDue, outreachMetrics, updateOutreach, OUTREACH_STATUS_SQL, OutreachRuleError,
+  addTodo, completeTodo, deleteTodo, todoList,
   type EvidenceInput, type GoalKind, type JobStatus, type NotFitReason,
 } from '@jobhunt/core';
 import {
@@ -557,6 +558,31 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     await env.DB.prepare(
       "UPDATE follow_ups SET done = 1, done_at = datetime('now') WHERE id = ?").bind(seg[2]).run();
     return json({ ok: true });
+  }
+
+  // To-dos: everything owed, worked out from follow-ups, outreach, interviews and deadlines,
+  // plus what the person wrote down by hand (a HireVue and its deadline).
+  if (pathname === '/api/todos' && method === 'GET') {
+    return json(await todoList(env.DB, await loadConfig(env.DB)));
+  }
+
+  if (pathname === '/api/todos' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    try {
+      return json(await addTodo(env.DB, body as never, 'you'), { status: 201 });
+    } catch (e) {
+      return bad(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (seg[1] === 'todos' && seg[2] && seg[3] === 'done' && method === 'POST') {
+    const body = await request.json().catch(() => ({})) as { done?: boolean };
+    const found = await completeTodo(env.DB, seg[2], body.done !== false);
+    return found ? json({ ok: true }) : bad('No such to-do.', 404);
+  }
+
+  if (seg[1] === 'todos' && seg[2] && !seg[3] && method === 'DELETE') {
+    return (await deleteTodo(env.DB, seg[2])) ? json({ ok: true }) : bad('No such to-do.', 404);
   }
 
   if (pathname === '/api/runs') {

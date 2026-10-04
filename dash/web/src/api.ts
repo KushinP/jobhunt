@@ -186,6 +186,35 @@ export interface FollowUp {
   company: string; url: string | null; applied_at: string | null; portal_url: string | null;
 }
 
+export const TODO_KINDS: [string, string][] = [
+  ['assessment', 'Assessment (HireVue, OA, take-home)'],
+  ['interview', 'Interview prep or scheduling'],
+  ['application', 'Application'],
+  ['outreach', 'Outreach'],
+  ['other', 'Other'],
+];
+
+export interface TodoInput {
+  title: string; kind?: string; job_id?: string | null; due_at?: string | null;
+  url?: string | null; notes?: string | null;
+}
+
+export type TodoItemKind = 'task' | 'interview' | 'debrief' | 'follow_up' | 'outreach' | 'send_draft'
+  | 'closing' | 'ready';
+
+export interface TodoItem {
+  key: string; kind: TodoItemKind; ref_id: string; title: string; detail: string;
+  due: string | null; at?: string | null; job_id: string | null; company: string | null;
+  url?: string | null;
+  task?: { id: string; kind: string; created_by: 'you' | 'claude'; notes: string | null };
+}
+
+export interface TodoList {
+  today: string; due_count: number;
+  overdue: TodoItem[]; today_items: TodoItem[]; upcoming: TodoItem[]; anytime: TodoItem[];
+  swept_outreach: string[];
+}
+
 export interface Run {
   id: string; kind: string; started_at: string; finished_at: string | null;
   found: number; kept: number; duplicates: number; dropped: number;
@@ -267,6 +296,11 @@ export const api = {
   completeFollowup: (id: string) =>
     req<unknown>(`/api/followups/${id}/done`, { method: 'POST' }),
   runs: () => req<Run[]>('/api/runs'),
+  todos: () => req<TodoList>('/api/todos'),
+  addTodo: (t: TodoInput) => req<{ id: string }>('/api/todos', { method: 'POST', body: JSON.stringify(t) }),
+  completeTodo: (id: string, done = true) =>
+    req<unknown>(`/api/todos/${id}/done`, { method: 'POST', body: JSON.stringify({ done }) }),
+  deleteTodo: (id: string) => req<unknown>(`/api/todos/${id}`, { method: 'DELETE' }),
 };
 
 export interface SetupData {

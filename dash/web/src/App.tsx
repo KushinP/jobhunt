@@ -9,7 +9,7 @@ import { Outreach } from './components/Outreach.tsx';
 import { AddRole } from './components/AddRole.tsx';
 import { JobDrawer } from './components/JobDrawer.tsx';
 import { Metrics } from './components/Metrics.tsx';
-import { FollowUps } from './components/FollowUps.tsx';
+import { Todos } from './components/Todos.tsx';
 import { Runs } from './components/Runs.tsx';
 import { Setup } from './components/Setup.tsx';
 import { Evidence } from './components/Evidence.tsx';
@@ -19,14 +19,17 @@ import { CompanyPanel } from './components/CompanyPanel.tsx';
 import { NavContext } from './components/nav.tsx';
 import { OfflineBanner, UpdateBanner } from './components/UpdateBanner.tsx';
 
-type Tab = 'board' | 'list' | 'companies' | 'outreach' | 'documents' | 'trash' | 'followups' | 'metrics' | 'runs' | 'evidence' | 'setup';
+type Tab = 'board' | 'todos' | 'list' | 'companies' | 'outreach' | 'documents' | 'trash' | 'metrics' | 'runs' | 'evidence' | 'setup';
 
-const TABS: string[] = ['board', 'list', 'companies', 'outreach', 'documents', 'trash', 'followups', 'metrics', 'runs', 'evidence', 'setup'];
+const TABS: string[] = ['board', 'todos', 'list', 'companies', 'outreach', 'documents', 'trash', 'metrics', 'runs', 'evidence', 'setup'];
+
+/** Old links and home-screen shortcuts that named a tab which has since moved. */
+const RENAMED: Record<string, Tab> = { followups: 'todos' };
 
 /** Tabs that are tables and boards: they use the whole monitor, because more width means more
  * columns and fewer sideways scrolls. The rest are prose and forms, where a line that runs the
  * width of a large screen is unreadable, so they stay capped and centred. */
-const FULL_WIDTH: Tab[] = ['board', 'list', 'companies', 'outreach', 'documents', 'trash', 'followups', 'metrics', 'runs'];
+const FULL_WIDTH: Tab[] = ['board', 'todos', 'list', 'companies', 'outreach', 'documents', 'trash', 'metrics', 'runs'];
 
 /** Tabs the header search filters directly; anywhere else, Enter takes the search to All roles. */
 const SEARCHABLE: Tab[] = ['board', 'list', 'companies', 'documents'];
@@ -35,8 +38,9 @@ export default function App() {
   const qc = useQueryClient();
   // The home-screen shortcuts open a tab directly (/?tab=outreach), so the app has to honour it.
   const [tab, setTab] = useState<Tab>(() => {
-    const wanted = new URLSearchParams(window.location.search).get('tab');
-    return (wanted && TABS.includes(wanted as Tab) ? wanted : 'board') as Tab;
+    const asked = new URLSearchParams(window.location.search).get('tab') ?? '';
+    const wanted = RENAMED[asked] ?? asked;
+    return (TABS.includes(wanted) ? wanted : 'board') as Tab;
   });
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -50,6 +54,13 @@ export default function App() {
     queryFn: api.bootstrap,
     enabled: session.data?.authed === true,
   });
+  // the to-do count on the tab; the page shares this query, so it costs one request
+  const todos = useQuery({
+    queryKey: ['todos'],
+    queryFn: api.todos,
+    enabled: session.data?.authed === true,
+    staleTime: 60_000,
+  });
 
   if (session.isLoading) return null;
   if (!session.data?.authed) {
@@ -58,16 +69,16 @@ export default function App() {
 
   const ready = boot.data?.counts.find((c) => c.status === 'Complete')?.n ?? 0;
   const setupTodo = (boot.data?.onboarding_outstanding ?? 0) || undefined;
-  const due = boot.data?.followups_due ?? 0;
+  const due = todos.data?.due_count ?? 0;
 
   const tabs: { key: Tab; label: string; badge?: number }[] = [
     { key: 'board', label: 'Pipeline' },
+    { key: 'todos', label: 'To do', badge: due },
     { key: 'list', label: 'All roles' },
     { key: 'companies', label: 'Companies' },
     { key: 'outreach', label: 'Outreach' },
     { key: 'documents', label: 'Documents' },
     { key: 'trash', label: 'Trash' },
-    { key: 'followups', label: 'Follow-ups', badge: due },
     { key: 'metrics', label: 'Metrics' },
     { key: 'runs', label: 'Runs' },
     { key: 'evidence', label: 'Experience' },
@@ -148,6 +159,7 @@ export default function App() {
       </nav>
 
       {tab === 'board' && <Board onOpen={setOpenId} search={search} />}
+      {tab === 'todos' && <Todos onTab={setTab} />}
       {tab === 'list' && (
         <AllRoles search={search} only={only} onClearOnly={() => setOnly(null)} />
       )}
@@ -155,7 +167,6 @@ export default function App() {
       {tab === 'outreach' && <Outreach />}
       {tab === 'documents' && <Documents search={search} />}
       {tab === 'trash' && <Trash onOpen={setOpenId} />}
-      {tab === 'followups' && <FollowUps />}
       {tab === 'metrics' && (
         <Metrics onSelect={(sel) => { setOnly(sel); setTab('list'); }} />
       )}

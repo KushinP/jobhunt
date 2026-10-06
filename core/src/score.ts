@@ -122,7 +122,11 @@ export function scoreJob(
   // early-career titles: the level word is qualified by what comes before it.
   // "Analyst/Sr. Analyst" and "Financial Analyst or Senior Financial Analyst" are open at the
   // junior level too, so the senior alternative is not read as the role's level.
-  const levelTitle = hayTitle
+  // "Staff Analyst" is a civil-service grade (Staff Analyst I, II, Trainee) at the MTA, NYC and
+  // other cities, not the tech "Staff" level; Snowflake's "Staff Analyst" still reads as senior.
+  const civilService = /\bstaff analyst\s+(?:i{1,3}|trainee|series)\b/.test(`${hayTitle} ${hayJd}`)
+    || /\b(?:city of|county|state of|department of|authority|commonwealth|municipal|transit)\b/i.test(input.company ?? '');
+  const levelTitle = (civilService ? hayTitle.replace(/\bstaff analyst\b/g, 'analyst') : hayTitle)
     .replace(/(?:\/|\bor\b)\s*(?:sr|senior)\.?\s+(?:[a-z&]+\s+){0,3}?(?:analyst|associate|consultant)\b/g, ' ')
     .replace(/\bassociate(?:\s+[a-z&-]+){0,5}?\s+manager\b/g, ' ')
     .replace(/\bmember of(?:\s+[a-z&]+){0,2}\s+staff\b/g, ' ');
@@ -211,10 +215,12 @@ export function statedYears(jd: string | null | undefined): number | null {
   if (!jd) return null;
   const found: number[] = [];
   const n = String.raw`(?<![\d.])(?<!up to )(?<!(?:past|last|next|first|within) )(?<!into )(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*\d{1,2}\s*\+?\s*)?`
-    + String.raw`years?\b(?!['’]?\s*(?:degree|college|university|bachelor|program))`;
+    + String.raw`years?\b(?!['’]?\s*(?:degree|college|university|bachelor|program))`
+    // "compressing 10 years of experience into two" is a pitch about growth, not a floor
+    + String.raw`(?![^.]{0,40}?\binto\s+\d)`;
   const years = new RegExp(n, 'g');
   for (const sentence of jdSentences(jd)) {
-    if (ABOUT_THE_COMPANY.test(sentence) || LEADING_PREFERENCE.test(sentence)) continue;
+    if (ABOUT_THE_COMPANY.test(sentence) || LEADING_PREFERENCE.test(sentence) || NO_DEGREE_PATH.test(sentence)) continue;
     // "3 or more years of experience (preferred)": a preference in brackets qualifies what
     // precedes it, so it is unbracketed before the sentence is cut into clauses.
     const unbracketed = sentence.replace(/\(\s*(preferred|desired|ideal|ideally|a plus|nice to have)\s*\)/g, ' $1 ');
@@ -238,6 +244,9 @@ const PREFERRED = /\b(preferred|nice to have|bonus|(?:a|strong) plus|an asset|id
 const LEADING_PREFERENCE = /^(?:[-*•·]\s*)?(?:ideally|preferred|bonus|nice to have)\b/;
 // "We bring 10 years of experience to every client" is about the company, not the candidate.
 const ABOUT_THE_COMPANY = /\b(we have|we've|we bring|our (company|team|firm|founders) (has|have|brings?)|founded in|been in business|in business for)\b/;
+// Civil-service postings list routes for people without a bachelor's ("or an associate degree
+// and 5 years", "or a 4-year high school diploma and 7 years"). A graduate takes the degree route.
+const NO_DEGREE_PATH = /^(?:[-*•·]\s*)?(?:or\s*)?an?\s*(?:associate(?:'s|’s)? degree|\d-year high school|high school diploma|ged)\b/;
 const NUMBER_WORDS: Record<string, string> = {
   one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8',
   nine: '9', ten: '10', eleven: '11', twelve: '12', fifteen: '15',
@@ -255,7 +264,7 @@ function degreePath(sentence: string): string {
   if (!degree) return sentence;
   // Only an "or" that goes on to offer years, a diploma or an equivalent; "(business, finance,
   // or similar)" is a list of fields.
-  const or = /\bor\b(?=[^.)]{0,40}?(?:\d{1,2}\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*)?years?|high school|ged|diploma|equivalent))/g;
+  const or = /\bor\b(?!\s+(?:university|college|institution)\b)(?=[^.)]{0,40}?(?:\d{1,2}\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*)?years?|high school|ged|diploma|equivalent))/g;
   or.lastIndex = degree.index + degree[0].length;
   const alt = or.exec(sentence);
   return alt ? sentence.slice(0, alt.index) : sentence;

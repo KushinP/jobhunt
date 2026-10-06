@@ -333,8 +333,13 @@ test('a degree alternative, a degree length, a ceiling and a spaced range are no
   assert.equal(statedYears('- 0 - 3 years of relevant professional experience'), 0);
   assert.equal(statedYears('4 - 7 years’ experience in tax equity'), 4);
   assert.equal(statedYears('Experience 3 or more years of experience (preferred)Supervisory responsibilities none.'), null);
+  assert.equal(statedYears('A baccalaureate degree from an accredited college or university and 3 years of '
+    + 'satisfactory full-time professional experience.'), 3, '"college or university" is a list, not a route');
+  assert.equal(statedYears('A baccalaureate degree and 3 years of professional experience; or an associate degree '
+    + 'and 5 years of professional experience; or a 4-year high school diploma and 7 years of experience.'), 3,
+    'routes for people without a bachelor\'s are not the floor');
   assert.equal(statedYears('At least part of the qualifying professional experience must have been obtained within the past 7 years.'), null);
-  assert.equal(statedYears('Compressing 10 years of experience into 2.'), 10, 'marketing copy with a number still reads as a floor');
+  assert.equal(statedYears('Compressing 10 years of experience into 2.'), null, 'a pitch about growth is not a floor');
   assert.equal(statedYears('3+ years of experience in data analysis.\n3+ years of experience using modern BI tools.'), 3);
   assert.equal(statedYears('Experience in business operations or a related analytical role.'), null,
     '"in business" is not "in business for 10 years"');
@@ -407,4 +412,34 @@ test('abbreviated operations titles match their target terms', () => {
     { title, company: 'Acme', location: 'Boston, MA', jd: jdText });
     assert.notEqual(r.drop_reason, 'title matches no target role', title);
   }
+});
+
+test('"N years of experience into two" is a pitch, not a requirement', () => {
+  const r = scoreJob(cfg, { title: 'Chief of Staff, Special Projects', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Startup saas forecasting pricing kpi dashboards. Perfect for a future founder; compressing '
+      + '10 years of experience into two. Cross-functional analysis and financial modeling.') });
+  assert.equal(r.breakdown.years_required ?? null, null);
+  assert.notEqual(r.drop_reason, 'requires 10+ years of experience (limit 2)');
+});
+
+test('Staff Analyst is a civil-service grade at public employers, and senior elsewhere', () => {
+  const jdText = (extra: string) => fullJd(`Startup saas forecasting pricing kpi dashboards. ${extra}`);
+  const pub = scoreJob(cfg, { title: 'Staff Analyst Series', company: 'Metropolitan Transportation Authority',
+    location: 'Boston, MA', jd: jdText('Staff Analyst I $71,203 - $84,295. Staff Analyst II $82,673.') });
+  assert.notEqual(pub.drop_reason, 'level mismatch: senior title');
+  const graded = scoreJob(cfg, { title: 'Staff Analyst', company: 'Acme Transit Co',
+    location: 'Boston, MA', jd: jdText('Analytical support.') });
+  assert.notEqual(graded.drop_reason, 'level mismatch: senior title');
+  const tech = scoreJob(cfg, { title: 'Staff Analyst, GTM Analytics', company: 'Snowflake',
+    location: 'Boston, MA', jd: jdText('Lead analytics for go-to-market.') });
+  assert.equal(tech.drop_reason, 'level mismatch: senior title');
+  const bank = scoreJob(cfg, { title: 'Staff Analyst', company: 'State Street',
+    location: 'Boston, MA', jd: jdText('Finance analytics.') });
+  assert.equal(bank.drop_reason, 'level mismatch: senior title');
+});
+
+test('Deployment Manager names the job, not a management level', () => {
+  const r = scoreJob(cfg, { title: 'AI Deployment Manager - Builder', company: 'OpenAI', location: 'Boston, MA',
+    jd: fullJd('Drive AI adoption and enablement for enterprise customers. Own deployment and onboarding.') });
+  assert.notEqual(r.drop_reason, 'level mismatch: senior title');
 });

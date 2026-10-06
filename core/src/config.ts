@@ -108,7 +108,7 @@ export const DEFAULT_CONFIG: Config = {
       name: 'AI implementation / deployment',
       title_terms: [
         'ai implementation', 'implementation consultant', 'solutions consultant', 'ai solutions',
-        'implementation manager', 'ai strategy',
+        'implementation manager', 'deployment manager', 'ai strategy',
         'ai adoption', 'ai enablement', 'deployment strategist', 'technical account manager',
         'customer solutions', 'ai consultant', 'solutions engineer', 'implementation specialist',
       ],

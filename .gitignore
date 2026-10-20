@@ -10,3 +10,4 @@ dist/
 # Copy the .example.jsonc files and edit.
 mcp/wrangler.jsonc
 dash/wrangler.jsonc
+dash/web/tsconfig.tsbuildinfo

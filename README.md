@@ -94,7 +94,7 @@ Claude account.
 ```bash
 git clone <your fork>
 cd app
-npm install
+npm install && npm --prefix dash/web install
 cp .env.example .env          # add a Cloudflare API token
 bash setup-cloudflare.sh      # creates the D1 database and KV namespace, applies migrations
 ```
@@ -153,9 +153,9 @@ tools/       admin scripts (backfills, uploading the skill zips)
 ## Development
 
 ```bash
-npm install
-node --test core/test/*.test.ts    # 180 tests, no network, real schema in node:sqlite
-npx tsc -p . --noEmit              # type-check workers and core
+npm install && npm --prefix dash/web install
+npm test                           # no network, real schema in node:sqlite
+npm run typecheck                  # workers, core and the dashboard app
 npm run dev:mcp                    # local connector
 npm run dev:dash                   # local dashboard API
 npm run dev:web                    # the dashboard's React app

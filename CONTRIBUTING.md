@@ -6,10 +6,11 @@ are welcome.
 ## Before a pull request
 
 ```bash
-node --test core/test/*.test.ts     # must pass, no network needed
-npx tsc -p . --noEmit               # workers and core
-cd dash/web && npx tsc --noEmit -p . # the dashboard app
+npm test            # must pass, no network needed
+npm run typecheck   # workers, core and the dashboard app
 ```
+
+CI runs both on every pull request, plus the dashboard build.
 
 Tests apply the real migrations to an in-memory SQLite database, so schema changes are covered
 by the same run.

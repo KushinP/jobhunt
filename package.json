@@ -8,8 +8,8 @@
     "dash"
   ],
   "scripts": {
-    "test": "node --test core/test/*.test.js",
-    "typecheck": "tsc -b core mcp dash",
+    "test": "node --test core/test/*.test.ts",
+    "typecheck": "tsc -p . --noEmit && tsc -p dash/web --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply jobhunt --local --persist-to .wrangler-shared --config mcp/wrangler.jsonc",
     "db:migrate:remote": "wrangler d1 migrations apply jobhunt --remote --config mcp/wrangler.jsonc",
     "dev:mcp": "wrangler dev --config mcp/wrangler.jsonc --local --persist-to .wrangler-shared --port 8788 --ip 127.0.0.1 --inspector-port 9229",
@@ -18,7 +18,6 @@
     "build:web": "npm --prefix dash/web run build",
     "deploy:mcp": "wrangler deploy --config mcp/wrangler.jsonc",
     "deploy:dash": "npm run build:web && wrangler deploy --config dash/wrangler.jsonc",
-    "e2e": "python3 ../docs/e2e_mcp.py && python3 ../docs/e2e_dash.py",
     "ci:build:mcp": "node tools/write-wrangler-config.mjs mcp",
     "ci:build:dash": "npm --prefix dash/web ci && npm run build:web && node tools/write-wrangler-config.mjs dash"
   },

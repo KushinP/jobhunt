@@ -200,7 +200,7 @@ export interface TodoInput {
 }
 
 export type TodoItemKind = 'task' | 'interview' | 'debrief' | 'follow_up' | 'outreach' | 'send_draft'
-  | 'closing' | 'ready';
+  | 'closing' | 'ready' | 'open_by_hand';
 
 export interface TodoItem {
   key: string; kind: TodoItemKind; ref_id: string; title: string; detail: string;

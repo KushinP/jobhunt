@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
-  HumanOnlyStatusError, attachJd, ingestJobs, listQueue, loadConfig, logRun, putConfig,
+  HumanOnlyStatusError, attachJd, ingestJobs, listQueue, queueTotal, dedupeReport, skipStaleNoJd, loadConfig, logRun, putConfig,
   addManualJob, getDocument, recordSubmission, refreshFollowUps, rescoreJob, rescorePipeline, saveDocument, setRoleClosed, markNotAFit, notFitMetrics, NOT_FIT_REASONS,
   setRating, setStatus, resolvePosting, boardNames, statusSetBy, fetchMissingJds,
   startUpload, addChunk, uploadInstructions, UploadError, CHUNK_CHARS, docLink,
@@ -89,8 +89,25 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
       + 'the person\'s star rating first (5 high, unrated last), then score. Each row has `rating`, '
       + '`score`, `queued_by` ("you" or "automation"), `has_jd`, and `has_resume` / '
       + '`has_cover_letter`: a half-built role needs only the missing file.',
-    inputSchema: { limit: z.number().int().min(1).max(100).default(25) },
-  }, async ({ limit }) => ok(await listQueue(env.DB, limit)));
+    inputSchema: {
+      limit: z.number().int().min(1).max(200).default(25),
+      offset: z.number().int().min(0).default(0).describe('skip this many rows, to page through a deep queue'),
+    },
+  }, async ({ limit, offset }) => {
+    const [rows, total] = await Promise.all([listQueue(env.DB, limit, offset), queueTotal(env.DB)]);
+    return ok(rows, `${rows.length} of ${total} queued roles (from ${offset + 1})`);
+  });
+
+  server.registerTool('dedupe_report', {
+    description: 'Read-only. Roles that share a dedupe key under the current rules but were stored '
+      + 'under different keys, so ingest never matched them ("Strategy & Operations" vs "Strategy '
+      + 'and Operations", "1stDibs" vs "1stdibs.com"). Nothing is merged or moved. A row marked '
+      + '`protected` is past Applied or was set by the person: never skip or merge it without asking.',
+    inputSchema: {},
+  }, async () => {
+    const r = await dedupeReport(env.DB);
+    return ok(r, `${r.groups.length} duplicate group(s) across ${r.scanned} roles. Nothing was changed.`);
+  });
 
   server.registerTool('list_pipeline', {
     description: 'Browse the pipeline with optional filters. Use for questions like "what is '
@@ -139,8 +156,13 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
                  FROM v_pipeline
                  ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY score DESC, created_at DESC LIMIT ? OFFSET ?`;
-    const { results } = await env.DB.prepare(sql).bind(...binds, limit, offset).all();
-    return ok(results, `${results.length} rows`);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [{ results }, count] = await Promise.all([
+      env.DB.prepare(sql).bind(...binds, limit, offset).all(),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM v_pipeline ${whereSql}`).bind(...binds).first<{ n: number }>(),
+    ]);
+    return ok(results, `${results.length} of ${count?.n ?? results.length} rows`
+      + (offset ? ` (from ${offset + 1})` : ''));
   });
 
   server.registerTool('get_job', {
@@ -447,11 +469,18 @@ export function registerPipelineTools(server: McpServer, env: Env): void {
       dry_run: z.boolean().default(false).describe('read the postings but attach nothing'),
     },
   }, async ({ ids, limit, dry_run }) => {
-    const r = await fetchMissingJds(env.DB, await loadConfig(env.DB), { ids, limit, dryRun: dry_run });
+    const cfg = await loadConfig(env.DB);
+    // the daily stale-role rule rides on the JD pass, which every search run makes
+    const stale = await skipStaleNoJd(env.DB, cfg, { dryRun: dry_run });
+    const r = { ...await fetchMissingJds(env.DB, cfg, { ids, limit, dryRun: dry_run }), stale_skipped: stale.skipped,
+      open_by_hand: stale.open_by_hand };
     const moved = r.attached.filter((a) => a.from !== a.to);
     return ok(r, `${dry_run ? '[dry run] ' : ''}${r.attached.length} JDs ${dry_run ? 'readable' : 'attached'}`
       + (moved.length ? ` (${moved.map((a) => `${a.title} @ ${a.company}: ${a.from} -> ${a.to}`).join('; ')})` : '')
-      + `, ${r.failed.length} unreadable, ${r.needs_connector.length} need a connector, ${r.remaining} left for another call.`);
+      + `, ${r.failed.length} unreadable, ${r.needs_connector.length} need a connector, ${r.remaining} left for another call.`
+      + (stale.skipped.length ? ` ${stale.skipped.length} stale ${cfg.stale_no_jd_sources.join('/')} role(s) with no JD `
+        + `after ${cfg.stale_no_jd_days} days ${dry_run ? 'would be' : 'were'} skipped.` : '')
+      + (stale.open_by_hand.length ? ` ${stale.open_by_hand.length} high-scoring one(s) wait for the person to open by hand (in To do).` : ''));
   });
 
   server.registerTool('start_document_upload', {

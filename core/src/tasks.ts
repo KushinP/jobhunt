@@ -82,20 +82,34 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
   // LinkedIn is the primary aggregator since 2026-09-18: at about a cent a call it runs every
   // query daily. Indeed is kept as a cheap cross-check on the core queries only.
   if (src.has('linkedin')) {
-    searchSteps.push(`- **LinkedIn** (primary): \`search_linkedin\` for EVERY entry in \`query_set\`. `
+    // Apify's free plan cap ran out nine days into October at ~$0.70 a day, almost all LinkedIn,
+    // and 58% of its results were duplicates. Queries that keep nothing are skipped per query.
+    const skipBoth = cfg.query_set.filter((x) => x.linkedin_skip === 'both').map((x) => `"${x.q}"`);
+    const skipLocal = cfg.query_set.filter((x) => x.linkedin_skip === 'local').map((x) => `"${x.q}"`);
+    const skipRemote = cfg.query_set.filter((x) => x.linkedin_skip === 'remote').map((x) => `"${x.q}"`);
+    const skips = [
+      skipBoth.length ? `${andList(skipBoth)} (not at all)` : '',
+      skipLocal.length ? `${andList(skipLocal)} (no city search; remote still runs)` : '',
+      skipRemote.length ? `${andList(skipRemote)} (no remote search)` : '',
+    ].filter(Boolean);
+    searchSteps.push(`- **LinkedIn** (primary): \`search_linkedin\` for every entry in \`query_set\``
+      + (skips.length ? `, except ${skips.join('; ')}` : '') + `. Pass \`limit\` ${cfg.linkedin_limit ?? 25}. `
       + `For scope "local" or "both", search ${cityList} with \`days\` ${rotated ? 7 : 1}. For scope `
       + '"remote" or "both", also search with location "remote" and `days` 1 (7 on Monday). It '
       + 'fetches full JDs and ingests on the server, so do NOT pass its results to ingest_jobs. '
-      + 'About a cent a call. If it reports no Apify token or fails, record linkedin in '
-      + 'sources_unavailable; never skip it silently.');
+      + 'If it reports no Apify token or fails, record linkedin in sources_unavailable; never skip it silently.');
   }
   if (src.has('builtin')) {
     const startupQs = cfg.query_set.filter((x) => x.archetype === 1 || x.archetype === 4).map((x) => `"${x.q}"`);
     if (startupQs.length) {
-      searchSteps.push(`- **Built In**: ONE \`search_builtin\` call with queries [${startupQs.join(', ')}] `
+      // One call of 14 queries timed out at 180 seconds; calls of 7 finish.
+      const batches: string[][] = [];
+      for (let i = 0; i < startupQs.length; i += 7) batches.push(startupQs.slice(i, i + 7));
+      searchSteps.push(`- **Built In**: ${batches.length === 1 ? 'ONE `search_builtin` call' : `${batches.length} \`search_builtin\` calls, one per batch`} `
+        + `with queries ${batches.map((b) => `[${b.join(', ')}]`).join(', then ')} `
         + `and location "${cities[0].search}" (Built In ${cities[0].name}). It filters to entry-level `
         + 'and junior, fetches full JDs and ingests on the server; do NOT pass its results to '
-        + 'ingest_jobs. It takes one to three minutes.');
+        + 'ingest_jobs. Each call takes one to three minutes.');
     }
   }
   if (src.has('indeed')) {
@@ -164,6 +178,23 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
       + 'errors, record linkedin_alerts in sources_unavailable.');
   }
 
+  if (src.has('vc_jobs_newsletter')) {
+    // Written by the person on 2026-10-22 and folded in here. The 10-22 backfill of issues 50 and
+    // 51 kept 15 of 91 roles and queued 7.
+    searchSteps.push('- **Venture Capital Jobs newsletter** (the **Gmail** connector). `search_threads` with '
+      + 'query `from:venturecapitaljobs@substack.com newer_than:2d` (a weekly issue, Monday morning; most '
+      + 'days find nothing, which is fine). For each issue, `get_thread` with messageFormat "PLAIN_TEXT", '
+      + 'then pass its `plaintextBody` unchanged to `parse_vc_jobs_newsletter`. The server parses, follows '
+      + 'the links, skips unnamed-employer lines and ingests; when it returns `next_skip`, call again with '
+      + '`skip` = that value until nothing remains. Keep its `kept_ids` for STEP 4a. Do not mark, label or '
+      + 'archive the email. If Gmail is unavailable, record vc_jobs_newsletter in sources_unavailable.');
+  }
+
+  const apifyTools = [
+    src.has('linkedin') ? 'search_linkedin' : null, src.has('indeed') ? 'search_indeed' : null,
+    src.has('builtin') ? 'search_builtin' : null,
+  ].filter((x): x is string => x !== null);
+
   const toIngest = [
     src.has('ziprecruiter') ? ['ZipRecruiter', 'ziprecruiter'] : null,
     src.has('dice') ? ['Dice', 'dice'] : null,
@@ -185,9 +216,19 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     'STEP 2. Search each source below:',
     ...searchSteps,
     '',
+    'If a connector\'s tools are missing (Gmail, ZipRecruiter, Dice, Indeed), load them with '
+    + 'ToolSearch before deciding it is unavailable: connectors can still be starting when the run '
+    + 'begins. Do the same once after a "MCP server connection lost" error, then retry the call.',
+    '',
     'If a source errors or rate-limits, retry that call once; if it fails again, stop calling '
     + 'that source for this run, keep what it already returned, and record it in '
     + 'sources_unavailable (say "partial" if some calls worked). Never skip a source silently.',
+    ...(apifyTools.length
+      ? ['', `APIFY CREDIT. If ${apifyTools.map((t) => `\`${t}\``).join(' or ')} returns `
+        + '`apify_credit_exhausted` (or an error about Apify usage, credit, quota or billing), the '
+        + `monthly allowance is spent: do not retry${apifyTools.length > 1 ? ', and skip the other Apify sources for this run' : ''}. `
+        + 'Record each as "<source> (Apify monthly credit used up)" in sources_unavailable.']
+      : []),
     ...(src.has('handshake') || src.has('browser') || src.has('wellfound')
       ? ['', 'Handshake, Wellfound and "any job page in your browser" run only on demand through '
         + 'the job-extract skill in the person\'s own Chrome. Do not search them, do not mark '
@@ -206,7 +247,12 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     '  a. `fetch_jds` with no ids. The server reads LinkedIn (alert-email links included), '
     + 'Greenhouse, Lever, Ashby, YC and most career pages, which your own fetcher cannot, attaches '
     + 'each description and re-scores it: the role moves to Queued (API "Generate"), Discarded, or '
-    + 'stays in New. Call it again while `remaining` is above 0, at most 3 calls.',
+    + 'stays in New. Call it again while `remaining` is above 0, at most 3 calls. If it returns '
+    + '`rate_limited` true, stop calling it for this run: the rest wait for tomorrow.'
+    + (src.has('vc_jobs_newsletter')
+      ? ' When the newsletter step ingested roles today, call `fetch_jds` with those `kept_ids` FIRST '
+        + '(25 per call), then without ids.'
+      : ''),
     '  b. Its `needs_connector` list is Indeed and ZipRecruiter links, which refuse servers. For up '
     + 'to 15 of them, best score first: if the Indeed connector is connected, search it '
     + '(`search_jobs`) by title and company; if the same role appears, take its full text with '
@@ -215,6 +261,10 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
       ? ' For a Dice role that fetch_jds could not read, use the Dice connector\'s `get_job_details` '
         + 'with its guid (the source_job_id) and `attach_jd`.'
       : ''),
+    ...(src.has('vc_jobs_newsletter')
+      ? ['  b2. Newsletter roles fetch_jds could not read often link to a firm\'s own page, a Google Doc '
+        + 'or a Notion page. Read those yourself (web fetch) and `attach_jd` the posting text.']
+      : []),
     '  c. Leave every role still without a JD in New. Do NOT mark it Unverified: the server tries it '
     + 'again in three days, and the person can open it. Only a posting that plainly says it is gone '
     + 'gets `set_status` "Dead link".',
@@ -321,7 +371,8 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
   ].join('\n');
 
   const build = [
-    'Build the tailored resume and cover letter for every role in the Queued column of the '
+    'Build the tailored resume and cover letter (for roles applied to through YC, a founder note in '
+    + 'place of the cover letter: see STEP 3 e2) for every role in the Queued column of the '
     + 'JobHunt pipeline. Do not ask any questions: where a skill says to ask, choose and note the '
     + 'choice in the report. Execute and report at the end.',
     '',
@@ -372,6 +423,18 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     + 'vocabulary, reorder, choose which to show, but never add a tool, metric, project, scope '
     + 'or outcome that is not in the bank. Respect `ownership`: "contributed" never becomes '
     + '"led", "team" never becomes "built". No em dashes. Dates as MM/YYYY - MM/YYYY.',
+    '  e2. YC CHANNEL. If the role\'s `url` is on workatastartup.com or ycombinator.com, the person '
+    + 'applies by messaging the founder on Work at a Startup, and no cover letter is read. Still build '
+    + 'the tailored resume (Ready requires one, and founders often ask for it after replying), but in '
+    + 'place of the cover letter write a FOUNDER NOTE: saved as kind "cover_letter", filename '
+    + '`Note_[Company]_[RoleCode]_[YYYY-MM-DD].docx`, 90 to 160 words of plain paragraphs to paste, '
+    + 'with no letterhead, date, salutation or sign-off. Open with one specific, verifiable fact about '
+    + 'the company from the posting or its YC page (never a compliment); then the two best-matching '
+    + 'proof points from confirmed evidence, with a number where the bank has one; then one sentence '
+    + 'on what he would own first. For an archetype 7 role (general application, founding, open), name '
+    + 'the proposed role and say it carries no quota. A YC company\'s role found on LinkedIn or on its '
+    + 'own Ashby, Greenhouse or Lever board is NOT this channel: write the normal cover letter.'
+    + ((cfg.output_rules as Record<string, unknown> | undefined)?.yc_channel ? ' Config `output_rules.yc_channel` states the same rule.' : ''),
     '  f. Verify page count by rendering to PDF if LibreOffice is available; otherwise treat '
     + 'it as an estimate and say so.',
     '  g. Build BOTH files before saving either. Never paste a file into a tool call: a long base64 '
@@ -389,7 +452,7 @@ export function scheduledTaskPrompts(cfg: Config): ScheduledTask[] {
     'STEP 4. `log_run` with kind "build_docs", `found` = roles looked at, `kept` = roles built, '
     + '`dropped` = roles turned away by the fit check, and any `errors`.',
     'STEP 5. Report, in this order: blockers; roles now Ready to submit (title, company, star rating, score, and the '
-    + 'links save_document returned); roles the person queued that miss a requirement, with it; '
+    + 'links save_document returned, marking those that got a founder note instead of a cover letter); roles the person queued that miss a requirement, with it; '
     + 'roles turned away by the fit check, with the unmet requirement; anything skipped or failed. '
     + 'For each resume, the evidence ids used and any JD requirement the bank could not honestly support.',
     '',

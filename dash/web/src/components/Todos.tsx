@@ -13,6 +13,7 @@ const LABEL: Record<TodoItemKind, { text: string; tone: string }> = {
   send_draft: { text: 'Send', tone: 'border-accent/40 text-accent' },
   closing: { text: 'Closing', tone: 'border-risk/40 text-risk' },
   ready: { text: 'Submit', tone: 'border-line text-fg' },
+  open_by_hand: { text: 'Needs JD', tone: 'border-warn/40 text-warn' },
 };
 
 /** The chips along the top: each shows a few kinds of item. */
@@ -22,7 +23,7 @@ const GROUPS: { key: string; label: string; kinds?: TodoItemKind[] }[] = [
   { key: 'interviews', label: 'Interviews', kinds: ['interview', 'debrief'] },
   { key: 'follow', label: 'Follow-ups', kinds: ['follow_up'] },
   { key: 'outreach', label: 'Outreach', kinds: ['outreach', 'send_draft'] },
-  { key: 'apply', label: 'Applications', kinds: ['closing', 'ready'] },
+  { key: 'apply', label: 'Applications', kinds: ['closing', 'ready', 'open_by_hand'] },
 ];
 
 /** How many ready-to-submit roles Everything shows before "show all". */

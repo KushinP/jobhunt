@@ -224,3 +224,31 @@ test('LinkedIn alert emails are read only when that source is on, and only these
   const off = byId(scheduledTaskPrompts(DEFAULT_CONFIG), 'jobhunt-search').prompt;
   assert.doesNotMatch(off, /jobalerts-noreply/);
 });
+
+test('the search prompt carries the hand edits of 2026-09-30 to 2026-10-22', () => {
+  const qs = [
+    { q: 'AI Implementation Consultant', archetype: 1, scope: 'both' as const, linkedin_skip: 'both' as const },
+    { q: 'AI Solutions Consultant', archetype: 1, scope: 'both' as const, linkedin_skip: 'local' as const },
+    ...Array.from({ length: 12 }, (_, i) => ({ q: `Ops ${i}`, archetype: 4, scope: 'both' as const })),
+  ];
+  const cfg = { ...DEFAULT_CONFIG, query_set: qs, preferences: {
+    ...DEFAULT_CONFIG.preferences, sources: ['linkedin', 'builtin', 'indeed', 'vc_jobs_newsletter'], target_cities: CITIES,
+  } };
+  const [search] = scheduledTaskPrompts(cfg);
+  assert.match(search.prompt, /except "AI Implementation Consultant" \(not at all\); "AI Solutions Consultant" \(no city search/);
+  assert.match(search.prompt, /Pass `limit` 25/);
+  assert.match(search.prompt, /2 `search_builtin` calls/, '14 queries go in two calls of 7');
+  assert.match(search.prompt, /ToolSearch/);
+  assert.match(search.prompt, /apify_credit_exhausted/);
+  assert.match(search.prompt, /rate_limited` true, stop calling it/);
+  assert.match(search.prompt, /parse_vc_jobs_newsletter/);
+  assert.match(search.prompt, /Google Doc/);
+  assert.doesNotMatch(search.prompt, /STEP 4d/, 'the title-gate rescue moved into the server');
+});
+
+test('the build prompt writes a founder note for YC-channel roles', () => {
+  const build = byId(scheduledTaskPrompts(DEFAULT_CONFIG), 'jobhunt-build-docs');
+  assert.match(build.prompt, /^Build the tailored resume and cover letter \(for roles applied to through YC/);
+  assert.match(build.prompt, /e2\. YC CHANNEL.*workatastartup\.com.*FOUNDER NOTE.*Note_\[Company\]_\[RoleCode\]_\[YYYY-MM-DD\]\.docx.*90 to 160 words/s);
+  assert.match(build.prompt, /founder note instead of a cover letter/);
+});

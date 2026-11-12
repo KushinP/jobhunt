@@ -4,36 +4,58 @@
  * Must stay byte-identical across every writer, so both Workers import this one function.
  */
 export function normalizeKey(title: string, company: string): string {
-  return `${strip(title)}|${strip(companyCore(company))}`;
+  return `${strip(title.replace(/&/g, ' and '))}|${strip(normalizeCompany(company))}`;
 }
 
 /**
  * The key rows were stored under before company names were normalised. Rows keep the key they
- * were written with, so a lookup checks both: `WHERE normalized_key IN (new, legacy)`.
+ * were written with, so a lookup checks every earlier form too.
  */
 export function legacyKey(title: string, company: string): string {
   return `${strip(title)}|${strip(company)}`;
 }
 
-/** Both keys a role may be stored under, for `normalized_key IN (?, ?)`. */
-export function dedupeKeys(title: string, company: string): [string, string] {
-  return [normalizeKey(title, company), legacyKey(title, company)];
+/** The key from 2026-10-01 to 2026-11-12: "&" stripped rather than read as "and", and web
+ * domains and "technologies" kept in the company. */
+function keyBeforeAmpersand(title: string, company: string): string {
+  return `${strip(title)}|${strip(companyCoreV1(company))}`;
+}
+
+/** Every key a role may be stored under, newest first, for `normalized_key IN (?, ?, ?)`. */
+export function dedupeKeys(title: string, company: string): [string, string, string] {
+  return [normalizeKey(title, company), keyBeforeAmpersand(title, company), legacyKey(title, company)];
 }
 
 const strip = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
+const LEGAL = /\b(the|inc|incorporated|llc|l\.?l\.?c|ltd|limited|corp|corporation|co|company|plc|lp|l\.?p|group|holdings|us|usa)\b\.?/g;
+
 /**
- * A company name without its legal form, ticker or location: one LinkedIn posting arrived as
- * both "Welltower™ Inc. (NYSE:WELL)" and "Welltower", and a bank with and without "US".
+ * A company name without its legal form, ticker, location or web domain: one LinkedIn posting
+ * arrived as both "Welltower™ Inc. (NYSE:WELL)" and "Welltower", a bank with and without "US",
+ * and "1stDibs" as "1stdibs.com". Brand and parent names ("Fitch Ratings", "Fitch Group") are
+ * not merged. Also the company identity for outreach's once-a-day rule.
  */
-function companyCore(company: string): string {
-  const core = company.toLowerCase()
+export function normalizeCompany(company: string): string {
+  const core = (company ?? '').toLowerCase()
     .replace(/[™®©]/g, '')
     .replace(/\([^)]*\)/g, ' ')
-    .replace(/\b(the|inc|incorporated|llc|l\.?l\.?c|ltd|limited|corp|corporation|co|company|plc|lp|l\.?p|group|holdings|us|usa)\b\.?/g, ' ')
+    .replace(/\.(?:com|ai|io|co|net|org|app|xyz)\b/g, ' ')
+    .replace(/\btechnologies\b/g, ' ')
+    .replace(LEGAL, ' ')
     .replace(/[\s,.]+/g, ' ')
     .trim();
   // A name that is nothing but those words ("The Group") keeps its original form.
+  return core || (company ?? '').toLowerCase().trim();
+}
+
+function companyCoreV1(company: string): string {
+  const core = company.toLowerCase()
+    .replace(/[™®©]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(LEGAL, ' ')
+    .replace(/[\s,.]+/g, ' ')
+    .trim();
   return core || company;
 }
 

@@ -71,6 +71,14 @@ export const DEFAULT_CONFIG: Config = {
   // Skills to keep off every document and out of interviews. A JD that requires one ("Strong
   // SQL") waits in New for a person instead of queuing for documents. Filled at onboarding.
   missing_skills: [],
+  linkedin_limit: 25,
+  stale_no_jd_days: 7,
+  stale_no_jd_sources: ['ziprecruiter', 'indeed'],
+  unmet_requirement_terms: [
+    'sql', 'python', 'r programming', 'tableau certification', 'korean', 'mandarin', 'japanese',
+    'german', 'french', 'series 7', 'series 63', 'series 79', 'cfa charter', 'cpa',
+    "master's degree required", 'mba required', 'computer science degree', 'engineering degree',
+  ],
   // Staffing agencies and blind postings, matched against the company field only. An agency
   // posting names no employer, so no tailored document is possible.
   exclude_companies: [

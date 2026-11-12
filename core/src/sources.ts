@@ -180,6 +180,24 @@ export const SOURCES: SourceDef[] = [
       + 'alerts carry no description, so their roles wait for the JD pass.',
   },
   {
+    id: 'vc_jobs_newsletter',
+    name: 'Venture Capital Jobs newsletter',
+    status: 'connector',
+    how: 'The daily search reads the weekly Venture Capital Jobs issue (Monday mornings) through '
+      + 'Claude\'s Gmail connector and hands its plain text to `parse_vc_jobs_newsletter`, which '
+      + 'parses one role per line, skips unnamed-employer recruiter lines, follows each link to the '
+      + 'real posting and ingests the roles (source "vc_jobs_newsletter").',
+    setup: [
+      'Subscribe to venturecapitaljobs.substack.com with the address you apply from.',
+      'In Claude: Settings, Connectors, add Gmail, signed in to that address.',
+    ],
+    cost: 'Free',
+    search_with: 'search_threads and get_thread (Gmail connector), then parse_vc_jobs_newsletter',
+    notes: 'VC firm roles (analyst, associate, platform, operations). The issue carries no '
+      + 'descriptions, so its roles wait for the JD pass; many link to firm pages, Google Docs or '
+      + 'Notion, which Claude reads when the server cannot.',
+  },
+  {
     id: 'email_alerts',
     name: 'Other job-alert emails (Indeed, ZipRecruiter, Handshake)',
     status: 'planned',

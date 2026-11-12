@@ -37,8 +37,17 @@ export interface ScoreBreakdown {
   location: number;
   /** the highest minimum experience the JD states as a requirement, when it states one */
   years_required?: number;
+  /** the JD sentence the years figure came from */
+  years_evidence?: string;
+  /** why the level gate fired: "senior title" or "years_required N > max M" */
+  level_reason?: string;
   /** a skill from config.missing_skills that the JD requires; the role is not auto-queued */
   missing_skill?: string;
+  /** terms from config.unmet_requirement_terms the JD states as requirements; not auto-queued */
+  unmet_requirements?: string[];
+  unmet_evidence?: string;
+  /** a graduation requirement the person can no longer meet, with their date; not auto-queued */
+  grad_window?: string;
 }
 
 export interface ScoreResult {
@@ -86,12 +95,26 @@ export interface Config {
   too_senior_terms: string[];
   /** a JD whose stated minimum experience is above this is discarded as a level mismatch */
   max_years_required: number;
+  /** requirements the person does not meet (languages, licenses, degrees, hard skills). A JD that
+   * states one as a requirement waits in New instead of being queued; it is never discarded. */
+  unmet_requirement_terms: string[];
   /** skills the person cannot be tested on; a JD requiring one stays in New instead of queuing */
   missing_skills: string[];
   /** matched against the company field only: staffing agencies and blind postings */
   exclude_companies: string[];
   base_resume_map: Record<string, string>;
-  query_set: { q: string; archetype: number; scope: 'local' | 'remote' | 'both' }[];
+  query_set: {
+    q: string; archetype: number; scope: 'local' | 'remote' | 'both';
+    /** leave this query out of LinkedIn searches: in the city, remote, or both. For queries that
+     * keep nothing there, since every LinkedIn call spends Apify credit. */
+    linkedin_skip?: 'local' | 'remote' | 'both';
+  }[];
+  /** days a role from `stale_no_jd_sources` may wait in New without a JD before it is skipped */
+  stale_no_jd_days: number;
+  /** sources whose links the server cannot read (Indeed and ZipRecruiter refuse servers) */
+  stale_no_jd_sources: string[];
+  /** results per LinkedIn search call; each costs Apify credit, and most past 25 are duplicates */
+  linkedin_limit: number;
   search_defaults: {
     country_code: string; local_location: string; remote_location: string;
     job_type: string; freshness_days: number;

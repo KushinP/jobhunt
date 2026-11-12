@@ -1,6 +1,6 @@
 import type { D1Like } from './repo.ts';
 import type { Config } from './types.ts';
-import { refreshFollowUps } from './repo.ts';
+import { refreshFollowUps, skipStaleNoJd } from './repo.ts';
 import { etDay, outreachDue } from './outreach.ts';
 
 /**
@@ -87,7 +87,7 @@ export async function listTodos(db: D1Like, opts: { includeDone?: boolean } = {}
 // ---------------------------------------------------------------------------
 
 export type TodoItemKind = 'task' | 'interview' | 'debrief' | 'follow_up' | 'outreach' | 'send_draft'
-  | 'closing' | 'ready';
+  | 'closing' | 'ready' | 'open_by_hand';
 
 export interface TodoItem {
   /** stable across reloads: kind plus the id of the row it came from */
@@ -258,6 +258,18 @@ export async function todoList(db: D1Like, cfg: Config, now = new Date()): Promi
       key: `ready-${r.id}`, kind: 'ready', ref_id: r.id, title: `Submit: ${r.title} at ${r.company}`,
       detail: `Documents ready${r.status_changed_at ? ` since ${r.status_changed_at.slice(0, 10)}` : ''}. Read them, then apply.`,
       due: null, job_id: r.id, company: r.company,
+    });
+  }
+
+  // Indeed and ZipRecruiter roles worth a look whose JD the server cannot read: the person opens
+  // the link. Lower scorers are skipped by the stale-role rule instead.
+  const { open_by_hand: byHand } = await skipStaleNoJd(db, cfg, { dryRun: true });
+  for (const r of byHand) {
+    items.push({
+      key: `open_by_hand-${r.id}`, kind: 'open_by_hand', ref_id: r.id, title: `Open by hand: ${r.title} at ${r.company}`,
+      detail: `Scores ${r.score}, but ${r.source} will not show its description to the server. Open the link and `
+        + 'paste the JD into the role, or skip it.',
+      due: null, job_id: r.id, company: r.company, url: r.url,
     });
   }
 

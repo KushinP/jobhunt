@@ -209,8 +209,9 @@ test('a role whose title matches no target is never auto-generated, however well
     jd: fullJd('ai machine learning llm saas b2b platform stakeholder cross-functional implementation training product roadmap') });
   assert.ok(r.score >= cfg.thresholds.auto_generate, `scores ${r.score}`);
   assert.equal(r.auto_generate, false);
-  assert.equal(r.drop_reason, 'title matches no target role');
-  assert.equal(statusForScore(r), 'Discarded', 'it does not sit in New either');
+  // a strong JD holds it in New for a person to judge (brief item 3, 2026-11-12)
+  assert.equal(r.drop_reason, null);
+  assert.equal(statusForScore(r), 'New');
 });
 
 test('adjacent functions sharing a target word are excluded by title', () => {
@@ -442,4 +443,73 @@ test('Deployment Manager names the job, not a management level', () => {
   const r = scoreJob(cfg, { title: 'AI Deployment Manager - Builder', company: 'OpenAI', location: 'Boston, MA',
     jd: fullJd('Drive AI adoption and enablement for enterprise customers. Own deployment and onboarding.') });
   assert.notEqual(r.drop_reason, 'level mismatch: senior title');
+});
+
+test('years stated mid-sentence without the word "experience" still count', async () => {
+  const { statedYears } = await import('../src/score.ts');
+  assert.equal(statedYears('Must have 4 years working in FP&A'), 4);
+  assert.equal(statedYears('You bring 4+ years in a client-facing role.'), 4);
+  // tenure and benefits sentences are not requirements
+  assert.equal(statedYears('Employees earn a paid sabbatical after 5 years with the company.'), null);
+  assert.equal(statedYears('Our team has spent 20 years in the hotel industry.'), null);
+  assert.equal(statedYears('We have been building for 12 years in this market.'), null);
+  assert.equal(statedYears('Named a Best Place to Work 3 years in a row.'), null);
+});
+
+test('sequential requirements add up', async () => {
+  const { statedYears } = await import('../src/score.ts');
+  assert.equal(statedYears('About 2 years in management consulting or investment banking, then 2–3 years at a '
+    + 'Series A or B startup'), 4);
+  assert.equal(statedYears('2 years in banking followed by 1 year in private equity.'), 3);
+});
+
+test('the breakdown says why the level gate fired', () => {
+  const r = scoreJob(cfg, { title: 'Business Operations Associate', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Startup saas forecasting pricing. 3–5 years of experience in business operations. '
+      + 'Financial modeling, kpi dashboards, cross-functional analysis.') });
+  assert.equal(r.breakdown.level_reason, 'years_required 3 > max 2');
+  assert.match(r.breakdown.years_evidence ?? '', /3–5 years of experience in business operations/);
+  const s = scoreJob(cfg, { title: 'Senior Business Analyst', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Startup saas forecasting pricing unit economics financial modeling kpi dashboards.') });
+  assert.equal(s.breakdown.level_reason, 'senior title');
+});
+
+test('unmet requirements are read from requirement sections and must/required lines only', async () => {
+  const { unmetRequirements } = await import('../src/score.ts');
+  const terms = DEFAULT_CONFIG.unmet_requirement_terms;
+  assert.deepEqual(unmetRequirements('Requirements:\n- Proficiency in SQL', terms).terms, ['sql']);
+  assert.deepEqual(unmetRequirements('Preferred Qualifications:\n- SQL', terms).terms, []);
+  assert.deepEqual(unmetRequirements('Experience with SQL is a plus', terms).terms, []);
+  assert.deepEqual(unmetRequirements('Must be fluent in Korean', terms).terms, ['korean']);
+  assert.deepEqual(unmetRequirements('You will partner with our Python engineers', terms).terms, []);
+  assert.deepEqual(unmetRequirements('What you will do\nBuild commission plans in Salesforce and partner with '
+    + 'sales leadership on territory design.\nRequirements\nComfort with spreadsheets and CRM tools.', terms).terms, []);
+  // squashed LinkedIn text: the heading runs into the first requirement
+  assert.deepEqual(unmetRequirements('About the role.Basic QualificationsAdvanced Python for data pipelines.'
+    + 'Preferred QualificationsCFA charter', terms).terms, ['python']);
+  // a preferred section ends the requirement section
+  assert.deepEqual(unmetRequirements('Minimum Qualifications\n- BA/BS\nNice to have\n- Mandarin', terms).terms, []);
+});
+
+test('an unmet requirement keeps a role in New without discarding it', () => {
+  const r = scoreJob(cfg, { title: 'AI Solutions Consultant', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Drive AI adoption for enterprise SaaS clients. Own implementation and onboarding, stakeholder '
+      + 'workshops and cross-functional rollout.\nRequirements:\n- Must be fluent in Korean.') });
+  assert.deepEqual(r.breakdown.unmet_requirements, ['korean']);
+  assert.equal(r.auto_generate, false);
+  assert.equal(r.drop_reason, null);
+  assert.equal(statusForScore(r), 'New');
+});
+
+test('a title outside the targets is held for review when the JD fits strongly, and dropped when it does not', () => {
+  const strong = scoreJob(cfg, { title: 'Technical Consultant I', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Drive AI adoption and generative AI automation for enterprise SaaS and B2B platform clients. '
+      + 'Own implementation, onboarding, integration and customer success. Stakeholder discovery, requirements, '
+      + 'training, change management, client-facing presentations, cross-functional roadmap and product work.') });
+  assert.equal(strong.drop_reason, null);
+  assert.equal(strong.auto_generate, false, 'a rescued title never auto-queues');
+  assert.equal(statusForScore(strong), 'New');
+  const weak = scoreJob(cfg, { title: 'Marketing Analyst', company: 'Acme', location: 'Boston, MA',
+    jd: fullJd('Plan social campaigns, write newsletter copy and manage the brand calendar for our stores.') });
+  assert.equal(statusForScore(weak), 'Discarded', String(weak.drop_reason));
 });

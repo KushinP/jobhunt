@@ -80,6 +80,8 @@ export async function ingestJobs(
     found: 0, kept: 0, auto_generate: 0, duplicates: 0, discarded: 0,
     errors: [], inserted: [],
   };
+  // read once per call, and only when a new role is scored
+  let graduated: string | null | undefined;
 
   for (const raw of jobs ?? []) {
     out.found++;
@@ -122,8 +124,9 @@ export async function ingestJobs(
       continue;
     }
 
+    graduated ??= await graduationDate(db);
     const sc: ScoreResult = scoreJob(cfg, {
-      title, company, location: raw.location, jd: raw.jd_text, salary,
+      title, company, location: raw.location, jd: raw.jd_text, salary, graduated,
     });
     const status = statusForScore(sc);
     const id = crypto.randomUUID();
@@ -168,16 +171,22 @@ export async function ingestJobs(
  * *Full-time, Day* (Hanford)"). Then the title and company key, in its current form and the
  * form older rows were stored under.
  */
+const LINKEDIN_ID_SPACE = ['linkedin', 'linkedin_email', 'vc_jobs_newsletter'];
+
 async function findExisting(
   db: D1Like, title: string, company: string, source: string, sourceJobId: string | null | undefined,
 ): Promise<{ id: string; needs_jd: number } | null> {
   const cols = 'id, jd_text IS NULL OR length(jd_text) < 800 AS needs_jd';
   if (sourceJobId) {
-    const bySource = await db.prepare(`SELECT ${cols} FROM jobs WHERE source = ? AND source_job_id = ? LIMIT 1`)
-      .bind(source, sourceJobId).first<{ id: string; needs_jd: number }>();
+    // A LinkedIn job id is the same posting whether search, an alert email or the VC Jobs
+    // newsletter found it: "Castellan Real Estate Partners" and "CRP Affordable Housing" were
+    // one job, 4469920249. Other sources' ids are only unique within that source.
+    const space = LINKEDIN_ID_SPACE.includes(source) ? LINKEDIN_ID_SPACE : [source];
+    const bySource = await db.prepare(`SELECT ${cols} FROM jobs WHERE source IN (${space.map(() => '?').join(', ')})
+      AND source_job_id = ? LIMIT 1`).bind(...space, sourceJobId).first<{ id: string; needs_jd: number }>();
     if (bySource) return bySource;
   }
-  return db.prepare(`SELECT ${cols} FROM jobs WHERE normalized_key IN (?, ?) LIMIT 1`)
+  return db.prepare(`SELECT ${cols} FROM jobs WHERE normalized_key IN (?, ?, ?) LIMIT 1`)
     .bind(...dedupeKeys(title, company)).first<{ id: string; needs_jd: number }>();
 }
 
@@ -247,7 +256,7 @@ export async function rescoreJob(db: D1Like, cfg: Config, jobId: string): Promis
     jd_text: string | null; salary: string | null }>();
   if (!job) throw new Error(`no such job ${jobId}`);
 
-  const sc = scoreJob(cfg, { ...job, jd: job.jd_text });
+  const sc = scoreJob(cfg, { ...job, jd: job.jd_text, graduated: await graduationDate(db) });
   // Score and archetype are refreshed; status is deliberately left alone so a human
   // decision already recorded is never overwritten by a re-score.
   await db.prepare(
@@ -330,7 +339,7 @@ export function sourceForManual(source: string, url: string | null): string {
 export async function addManualJob(
   db: D1Like, cfg: Config, job: RawJob & { rating?: number | null },
 ): Promise<{ id: string; score: number; status: JobStatus; duplicate: boolean }> {
-  const before = await db.prepare('SELECT id, status, score FROM jobs WHERE normalized_key IN (?, ?)')
+  const before = await db.prepare('SELECT id, status, score FROM jobs WHERE normalized_key IN (?, ?, ?)')
     .bind(...dedupeKeys(job.title ?? '', job.company ?? '')).first<
       { id: string; status: JobStatus; score: number }>();
   if (before) {
@@ -341,7 +350,7 @@ export async function addManualJob(
   const r = await ingestJobs(db, cfg, source, [{ ...job, source }]);
   if (r.errors.length) throw new Error(r.errors[0].reason);
 
-  const row = await db.prepare('SELECT id, score, status FROM jobs WHERE normalized_key IN (?, ?)')
+  const row = await db.prepare('SELECT id, score, status FROM jobs WHERE normalized_key IN (?, ?, ?)')
     .bind(...dedupeKeys(job.title ?? '', job.company ?? '')).first<
       { id: string; score: number; status: JobStatus }>();
   if (!row) throw new Error('the role was not stored');
@@ -479,6 +488,15 @@ export async function notFitMetrics(db: D1Like): Promise<{
 
 export interface RescoreMove {
   id: string; title: string; company: string; from: JobStatus; to: JobStatus; reason: string;
+  /** which rule moved it, and the JD phrase it read, for the sweep and the person to check */
+  gate?: 'years' | 'senior_title' | 'missing_skill' | 'unmet_requirement' | 'grad_window' | 'other';
+  evidence?: string | null;
+}
+
+/** When the person graduated ("MM/YYYY"), from the application profile, for the graduation-window check. */
+export async function graduationDate(db: D1Like): Promise<string | null> {
+  const r = await db.prepare("SELECT value FROM profile WHERE field = 'education_end'").bind().first<{ value: string }>();
+  return r?.value ?? null;
 }
 
 /**
@@ -504,8 +522,9 @@ export async function rescorePipeline(db: D1Like, cfg: Config, opts: {
 
   const moved: RescoreMove[] = [];
   let held = 0;
+  const graduated = await graduationDate(db);
   for (const r of results) {
-    const sc = scoreJob(cfg, { ...r, jd: r.jd_text });
+    const sc = scoreJob(cfg, { ...r, jd: r.jd_text, graduated });
     const target = statusForScore(sc);
     const demotes = (r.status === 'Generate' && target !== 'Generate')
       || (r.status === 'New' && target === 'Discarded');
@@ -517,10 +536,18 @@ export async function rescorePipeline(db: D1Like, cfg: Config, opts: {
     }
     if (!demotes) continue;
     if (r.touched || r.rating != null) { held++; continue; }
+    const b = sc.breakdown;
     const reason = sc.drop_reason
-      ?? (sc.breakdown.missing_skill ? `requires ${sc.breakdown.missing_skill}, which you cannot be tested on`
+      ?? (b.missing_skill ? `requires ${b.missing_skill}, which you cannot be tested on`
+        : b.unmet_requirements?.length ? `requires ${b.unmet_requirements.join(', ')}`
+        : b.grad_window ? `graduation window: ${b.grad_window}`
         : 'no longer meets the queue threshold');
-    moved.push({ id: r.id, title: r.title, company: r.company, from: r.status, to: target, reason });
+    const gate: RescoreMove['gate'] = b.level_reason === 'senior title' ? 'senior_title'
+      : b.level_reason ? 'years' : b.missing_skill ? 'missing_skill' : b.unmet_requirements?.length ? 'unmet_requirement'
+      : b.grad_window ? 'grad_window' : 'other';
+    const evidence = gate === 'years' ? b.years_evidence ?? null
+      : gate === 'unmet_requirement' ? b.unmet_evidence ?? null : gate === 'grad_window' ? b.grad_window ?? null : null;
+    moved.push({ id: r.id, title: r.title, company: r.company, from: r.status, to: target, reason, gate, evidence });
     if (!opts.dryRun) await setStatus(db, r.id, target, 'automation', `Re-scored: ${reason}`);
   }
   return {
@@ -529,7 +556,20 @@ export async function rescorePipeline(db: D1Like, cfg: Config, opts: {
   };
 }
 
-export async function listQueue(db: D1Like, limit = 25) {
+/** The Queued rows the build would take, as one WHERE clause shared by the list and its count. */
+const QUEUE_WHERE = `status = 'Generate' AND COALESCE(rating, 3) > 2
+       AND role_closed_at IS NULL
+       -- a role whose cover letter failed after the resume saved stays queued, not stuck
+       AND NOT (id IN (SELECT job_id FROM documents WHERE kind = 'resume')
+                AND id IN (SELECT job_id FROM documents WHERE kind = 'cover_letter'))`;
+
+/** How many roles are waiting to be built, however many one call returns. */
+export async function queueTotal(db: D1Like): Promise<number> {
+  const r = await db.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE ${QUEUE_WHERE}`).bind().first<{ n: number }>();
+  return r?.n ?? 0;
+}
+
+export async function listQueue(db: D1Like, limit = 25, offset = 0) {
   // Build order is the person's star rating first (5 down to 1, unrated after every rated role),
   // then score, then oldest first. queued_by: "you" when the person moved it to Generate
   // themselves, which the build run honours over its fit check; "automation" otherwise.
@@ -540,13 +580,9 @@ export async function listQueue(db: D1Like, limit = 25) {
             CASE WHEN (SELECT h.actor FROM status_history h
                        WHERE h.job_id = jobs.id AND h.to_status = 'Generate'
                        ORDER BY h.id DESC LIMIT 1) = 'human' THEN 'you' ELSE 'automation' END AS queued_by
-     FROM jobs WHERE status = 'Generate' AND COALESCE(rating, 3) > 2
-       AND role_closed_at IS NULL
-       -- a role whose cover letter failed after the resume saved stays queued, not stuck
-       AND NOT (id IN (SELECT job_id FROM documents WHERE kind = 'resume')
-                AND id IN (SELECT job_id FROM documents WHERE kind = 'cover_letter'))
-     ORDER BY rating IS NULL, rating DESC, score DESC, created_at ASC LIMIT ?`,
-  ).bind(limit).all();
+     FROM jobs WHERE ${QUEUE_WHERE}
+     ORDER BY rating IS NULL, rating DESC, score DESC, created_at ASC LIMIT ? OFFSET ?`,
+  ).bind(limit, offset).all();
   return results;
 }
 
@@ -834,4 +870,91 @@ export async function listGoals(db: D1Like, includeClosed = false) {
 export async function deleteGoal(db: D1Like, id: string): Promise<void> {
   const res = await db.prepare('DELETE FROM goals WHERE id = ?').bind(id).run() as { meta?: { changes?: number } };
   if ((res?.meta?.changes ?? 1) === 0) throw new Error(`no goal with id ${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Dedupe report
+// ---------------------------------------------------------------------------
+
+export interface DedupeGroup {
+  key: string;
+  rows: { id: string; title: string; company: string; status: string; source: string; protected: boolean }[];
+}
+
+const PROTECTED_STATUSES = ['Applied', 'Interviewing', 'Offer', 'Rejected'];
+
+/**
+ * Rows that share a dedupe key under today's rules but were stored under different keys, so
+ * ingest never matched them: "Strategy & Operations" against "Strategy and Operations",
+ * "1stDibs" against "1stdibs.com". Read-only: nothing is merged or moved. A row is `protected`
+ * when it is past Applied or the person set its status, and must never be merged by a run.
+ */
+export async function dedupeReport(db: D1Like): Promise<{ scanned: number; groups: DedupeGroup[] }> {
+  const { results } = await db.prepare(
+    `SELECT j.id, j.title, j.company, j.status, j.source, j.normalized_key,
+            (SELECT h.actor FROM status_history h WHERE h.job_id = j.id AND h.to_status = j.status
+              ORDER BY h.id DESC LIMIT 1) AS set_by
+     FROM jobs j`,
+  ).bind().all<{ id: string; title: string; company: string; status: string; source: string;
+    normalized_key: string; set_by: string | null }>();
+  const byKey = new Map<string, typeof results>();
+  for (const r of results) {
+    const k = normalizeKey(r.title, r.company);
+    byKey.set(k, [...(byKey.get(k) ?? []), r]);
+  }
+  const groups: DedupeGroup[] = [];
+  for (const [key, rows] of byKey) {
+    if (rows.length < 2) continue;
+    groups.push({
+      key,
+      rows: rows.map((r) => ({
+        id: r.id, title: r.title, company: r.company, status: r.status, source: r.source,
+        protected: PROTECTED_STATUSES.includes(r.status) || (r.set_by != null && r.set_by !== 'automation'),
+      })),
+    });
+  }
+  return { scanned: results.length, groups };
+}
+
+// ---------------------------------------------------------------------------
+// Stale roles with no JD
+// ---------------------------------------------------------------------------
+
+/**
+ * Indeed and ZipRecruiter refuse servers, so their roles can sit in New without a JD for good;
+ * the sweep moved them to Skip by hand after a week (20 ZipRecruiter roles on 2026-11-11 alone).
+ * A deterministic rule belongs here: after `stale_no_jd_days`, a role from `stale_no_jd_sources`
+ * still without a JD and scoring below the auto-queue bar is skipped. A role at or above the bar
+ * is worth a person's click instead, so it stays in New and is returned in `open_by_hand` with
+ * its link. Nothing the person set is touched.
+ */
+export async function skipStaleNoJd(db: D1Like, cfg: Config, opts: { dryRun?: boolean } = {}): Promise<{
+  skipped: { id: string; title: string; company: string; source: string }[];
+  open_by_hand: { id: string; title: string; company: string; source: string; url: string | null; score: number }[];
+}> {
+  const days = cfg.stale_no_jd_days ?? 7;
+  const sources = cfg.stale_no_jd_sources ?? [];
+  const out = { skipped: [] as { id: string; title: string; company: string; source: string }[],
+    open_by_hand: [] as { id: string; title: string; company: string; source: string; url: string | null; score: number }[] };
+  if (!sources.length || days <= 0) return out;
+  const { results } = await db.prepare(
+    `SELECT j.id, j.title, j.company, j.source, j.url, j.score
+     FROM jobs j
+     WHERE j.status = 'New' AND (j.jd_text IS NULL OR length(j.jd_text) < 800)
+       AND j.source IN (${sources.map(() => '?').join(', ')})
+       AND j.created_at < datetime('now', '-' || ? || ' days')
+       AND COALESCE((SELECT h.actor FROM status_history h WHERE h.job_id = j.id AND h.to_status = j.status
+                     ORDER BY h.id DESC LIMIT 1), 'automation') = 'automation'
+     ORDER BY j.score DESC`,
+  ).bind(...sources, days).all<{ id: string; title: string; company: string; source: string; url: string | null; score: number }>();
+  for (const r of results) {
+    if ((r.score ?? 0) >= cfg.thresholds.auto_generate) {
+      out.open_by_hand.push(r);
+      continue;
+    }
+    if (!opts.dryRun) await setStatus(db, r.id, 'Skip', 'automation',
+      `Auto: no JD after ${days} days; ${r.source} link unreadable by the server and the Indeed connector`);
+    out.skipped.push({ id: r.id, title: r.title, company: r.company, source: r.source });
+  }
+  return out;
 }

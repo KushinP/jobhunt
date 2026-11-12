@@ -1,3 +1,4 @@
+import { gradWindowConflict } from './grad.ts';
 import type { Config, ScoreResult } from './types.ts';
 import { countHits, hasHit, hitOutside } from './normalize.ts';
 import { extractPayLine, parseSalary } from './salary.ts';
@@ -14,6 +15,8 @@ export function scoreJob(
   input: {
     title: string; company: string; location?: string | null; jd?: string | null;
     salary?: string | null;
+    /** when the person graduated, "MM/YYYY" (profile education_end), for the graduation-window check */
+    graduated?: string | null;
   },
 ): ScoreResult {
   const w = cfg.weights;
@@ -115,7 +118,7 @@ export function scoreJob(
   // Titles rarely carry the level at the companies that matter most: "Strategic Finance,
   // B2B Product" at OpenAI asks for 7+ years. The JD usually says so outright.
   // Read from the original JD: the sentence splitter needs its capitals.
-  const yearsRequired = statedYears(input.jd);
+  const { years: yearsRequired, evidence: yearsEvidence } = statedYearsDetail(input.jd);
   const maxYears = cfg.max_years_required ?? 99;
   const tooManyYears = yearsRequired != null && yearsRequired > maxYears;
   // "Associate Product Manager", "Associate Asset Manager" and "Member of Operations Staff" are
@@ -134,13 +137,19 @@ export function scoreJob(
   const levelMismatch = seniorTitle || tooManyYears;
   const sSeniority = levelMismatch ? 0 : w.seniority;
   const missingSkill = hasJd ? missingSkillRequired(input.jd, cfg.missing_skills ?? []) : null;
+  const unmet = hasJd ? unmetRequirements(input.jd, cfg.unmet_requirement_terms ?? []) : { terms: [], evidence: null };
+  const gradWindow = hasJd ? gradWindowConflict(input.jd, input.graduated) : null;
 
   const total = bestTotal + sSeniority + sLocation;
   const score = Math.round(total);
   const breakdown = {
     ...best, seniority: round1(sSeniority), location: round1(sLocation),
-    ...(yearsRequired != null ? { years_required: yearsRequired } : {}),
+    ...(yearsRequired != null ? { years_required: yearsRequired, years_evidence: yearsEvidence ?? undefined } : {}),
+    ...(seniorTitle ? { level_reason: 'senior title' }
+      : tooManyYears ? { level_reason: `years_required ${yearsRequired} > max ${maxYears}` } : {}),
     ...(missingSkill ? { missing_skill: missingSkill } : {}),
+    ...(unmet.terms.length ? { unmet_requirements: unmet.terms, unmet_evidence: unmet.evidence ?? undefined } : {}),
+    ...(gradWindow ? { grad_window: gradWindow } : {}),
   };
 
   // Both used to cost only the 20 seniority points, which left the role in New at 80 or, when
@@ -179,9 +188,12 @@ export function scoreJob(
       : score < cfg.thresholds.hard_cutoff
       && !(titleMatches && best.domain + best.skill > 0) ? 'below hard cutoff'
       // JD keywords alone reach 80 on almost any tech posting, which filled New with
-      // "Dynamics365 Administrator" and "Co-Founder & CEO". The title is the test, as it is
-      // when there is no JD; an override term (a named early-career program) still rescues.
-      : !titleMatches && !hasOverride ? 'title matches no target role'
+      // "Dynamics365 Administrator" and "Co-Founder & CEO". So a title outside the targets is
+      // dropped unless the JD's own domain and skill vocabulary is at least half of the most it
+      // can earn: then it waits in New (it never auto-queues), which rescued Brex "Technical
+      // Consultant I" and Hebbia's roles. An override term (a named early-career program) still rescues.
+      : !titleMatches && !hasOverride && best.domain + best.skill < (w.domain + w.skill) / 2
+        ? 'title matches no target role'
       : null,
     // A level-mismatched role never auto-spends tokens, however well it keyword-matches.
     // Nor does one whose title matches no target: domain, skill, level and location alone
@@ -189,7 +201,11 @@ export function scoreJob(
     // "Field Enablement Specialist" for documents. Those wait in New for a person.
     // A required skill the person cannot be tested on keeps the role in New rather than
     // discarding it: the phrase test is loose, and a person can still judge the role worth it.
-    auto_generate: score >= cfg.thresholds.auto_generate && !levelMismatch && titleMatches && !missingSkill,
+    // So does one stating a requirement from unmet_requirement_terms (a language, a license).
+    auto_generate: score >= cfg.thresholds.auto_generate && !levelMismatch && titleMatches && !missingSkill
+      && unmet.terms.length === 0
+      // nor one that requires a graduation the person can no longer meet
+      && !gradWindow,
     needs_jd: false,
   };
 }
@@ -212,13 +228,21 @@ export function scoreJob(
  * - "within the past 7 years" is a window, not a floor; "(preferred)" after the years discounts them.
  */
 export function statedYears(jd: string | null | undefined): number | null {
-  if (!jd) return null;
-  const found: number[] = [];
-  const n = String.raw`(?<![\d.])(?<!up to )(?<!(?:past|last|next|first|within) )(?<!into )(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*\d{1,2}\s*\+?\s*)?`
+  return statedYearsDetail(jd).years;
+}
+
+/** statedYears, plus the sentence the figure came from, for the breakdown and sweep reports. */
+export function statedYearsDetail(jd: string | null | undefined): { years: number | null; evidence: string | null } {
+  if (!jd) return { years: null, evidence: null };
+  const found: { years: number; sentence: string }[] = [];
+  const n = String.raw`(?<![\d.])(?<!up to )(?<!(?:past|last|next|first|within|after|every) )(?<!into )(\d{1,2})\s*(?:\+|plus|or more)?\s*(?:(?:-|–|—|to)\s*\d{1,2}\s*\+?\s*)?`
     + String.raw`years?\b(?!['’]?\s*(?:degree|college|university|bachelor|program))`
     // "compressing 10 years of experience into two" is a pitch about growth, not a floor
     + String.raw`(?![^.]{0,40}?\binto\s+\d)`;
   const years = new RegExp(n, 'g');
+  // "4+ years in a client-facing role", "4 years working in FP&A": a requirement stated
+  // without the word "experience", anywhere in the sentence.
+  const yearsIn = new RegExp(String.raw`${n}['’]?\s+(?:in|as|working|at|with|across|within)\b`, 'g');
   for (const sentence of jdSentences(jd)) {
     if (ABOUT_THE_COMPANY.test(sentence) || LEADING_PREFERENCE.test(sentence) || NO_DEGREE_PATH.test(sentence)) continue;
     // "3 or more years of experience (preferred)": a preference in brackets qualifies what
@@ -226,17 +250,27 @@ export function statedYears(jd: string | null | undefined): number | null {
     const unbracketed = sentence.replace(/\(\s*(preferred|desired|ideal|ideally|a plus|nice to have)\s*\)/g, ' $1 ');
     const s = clauses(degreePath(unbracketed)).map(beforePreference).filter(Boolean).join(', ').trim();
     if (!s) continue;
+    const add = (y: number) => found.push({ years: y, sentence });
     const bullet = s.match(new RegExp(String.raw`^(?:[-*•·]\s*)?(?:minimum(?: of)?\s*|at least\s*)?${n}`));
-    if (bullet) found.push(Number(bullet[1]));
+    if (bullet) add(Number(bullet[1]));
     // "Required 5+ years in technical sales" states a requirement without the word "experience".
     for (const m of s.matchAll(new RegExp(String.raw`\b(?:required|requires|minimum(?: of)?|at least)\s*:?\s*${n}`, 'g'))) {
-      found.push(Number(m[1]));
+      add(Number(m[1]));
+    }
+    if (!TENURE.test(s)) for (const m of s.matchAll(yearsIn)) add(Number(m[1]));
+    // "2 years in consulting, then 2-3 years at a startup" asks for both, one after the other.
+    const steps = s.split(/\b(?:then|followed by|after which)\b/);
+    if (steps.length > 1) {
+      const floors = steps.map((part) => Number(new RegExp(n).exec(part)?.[1] ?? NaN));
+      if (floors.every((x) => !Number.isNaN(x))) add(floors.reduce((a, b) => a + b, 0));
     }
     if (!/\bexperience\b/.test(s)) continue;
-    for (const m of s.matchAll(years)) found.push(Number(m[1]));
+    for (const m of s.matchAll(years)) add(Number(m[1]));
   }
-  const real = found.filter((x) => x <= 15);
-  return real.length ? Math.max(...real) : null;
+  const real = found.filter((x) => x.years <= 15);
+  if (!real.length) return { years: null, evidence: null };
+  const top = real.reduce((a, b) => (b.years > a.years ? b : a));
+  return { years: top.years, evidence: top.sentence.slice(0, 200) };
 }
 
 const PREFERRED = /\b(preferred|nice to have|bonus|(?:a|strong) plus|an asset|ideally|desired|desirable|encouraged|not required)\b/;
@@ -244,6 +278,9 @@ const PREFERRED = /\b(preferred|nice to have|bonus|(?:a|strong) plus|an asset|id
 const LEADING_PREFERENCE = /^(?:[-*•·]\s*)?(?:ideally|preferred|bonus|nice to have)\b/;
 // "We bring 10 years of experience to every client" is about the company, not the candidate.
 const ABOUT_THE_COMPANY = /\b(we have|we've|we bring|our (company|team|firm|founders) (has|have|brings?)|founded in|been in business|in business for)\b/;
+// Tenure and benefits: "a sabbatical after 5 years with the company" is not a requirement.
+// Awards and streaks: "named a Best Place to Work 3 years in a row".
+const TENURE = /\b(sabbatical|vest\w*|anniversary|tenure|paid time off|pto|401\(?k|in a row|consecutive|ranked|named|recogni[sz]ed|award\w*)\b/;
 // Civil-service postings list routes for people without a bachelor's ("or an associate degree
 // and 5 years", "or a 4-year high school diploma and 7 years"). A graduate takes the degree route.
 const NO_DEGREE_PATH = /^(?:[-*•·]\s*)?(?:or\s*)?an?\s*(?:associate(?:'s|’s)? degree|\d-year high school|high school diploma|ged)\b/;
@@ -328,6 +365,43 @@ export function missingSkillRequired(jd: string | null | undefined, skills: read
     }
   }
   return null;
+}
+
+// Section headings. A requirement heading must stand alone ("Requirements", "Basic
+// Qualifications:"), so a sentence that merely starts with the word does not open a section.
+const REQ_HEADING = /^(?:basic |minimum |required |key )?(?:requirements|qualifications|what you(?:'ll| will)? need|what we(?:'re| are) looking for|what you bring|must[- ]haves?)\s*:?$/;
+// Anything that ends a requirement section, checked as a prefix: squashed LinkedIn text glues
+// the heading to the next line ("Preferred QualificationsCFA charter").
+const OTHER_HEADING = /^(?:preferred|bonus|nice[- ]to[- ]haves?|pluses|benefits|perks|what we offer|compensation|about (?:us|the)|why join|equal opportunity|what you(?:'ll| will) do|responsibilities)\b/;
+const MUST = /\b(required|requires?|must)\b/;
+
+/**
+ * Terms from `unmet_requirement_terms` that a JD states as requirements: on a line inside a
+ * requirements or qualifications section, or on any line that says "required" or "must".
+ * A preferred section ends the requirement section, and a line with a preference word
+ * ("a plus") or a softener ("interest in learning") does not count.
+ */
+export function unmetRequirements(jd: string | null | undefined, terms: readonly string[]): {
+  terms: string[]; evidence: string | null;
+} {
+  const hits: string[] = [];
+  let evidence: string | null = null;
+  if (!jd || !terms?.length) return { terms: hits, evidence };
+  let inSection = false;
+  for (const raw of jdSentences(jd)) {
+    const line = raw.replace(/^[-*•·\s]+/, '');
+    if (OTHER_HEADING.test(line)) { inSection = false; continue; }
+    if (REQ_HEADING.test(line)) { inSection = true; continue; }
+    if (!inSection && !MUST.test(line)) continue;
+    if (PREFERRED.test(line) || SOFT.test(line)) continue;
+    for (const term of terms) {
+      if (!hits.includes(term) && hasHit(line, [term])) {
+        hits.push(term);
+        evidence ??= line.slice(0, 200);
+      }
+    }
+  }
+  return { terms: hits, evidence };
 }
 
 function round1(n: number): number {

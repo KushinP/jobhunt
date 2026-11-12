@@ -34,7 +34,7 @@ test('dedupe key ignores legal form, ticker and location in the company name', (
 test('the legacy key is the one rows were stored under before', async () => {
   const { legacyKey, dedupeKeys } = await import('../src/normalize.ts');
   assert.equal(legacyKey('Analyst', 'Acme Corp'), 'analyst|acmecorp');
-  assert.deepEqual(dedupeKeys('Analyst', 'Acme Corp'), ['analyst|acme', 'analyst|acmecorp']);
+  assert.deepEqual(dedupeKeys('Analyst', 'Acme Corp'), ['analyst|acme', 'analyst|acme', 'analyst|acmecorp']);
 });
 
 test('"intern" does not match "International"', () => {
@@ -63,4 +63,21 @@ test('regex metacharacters in a term degrade instead of throwing', () => {
 
 test('terms under two characters are ignored', () => {
   assert.equal(countHits('a b c', ['a', 'b']), 0);
+});
+
+test('dedupe key reads "&" as "and", and drops a web domain and "technologies" from the company', () => {
+  assert.equal(normalizeKey('Strategy and Operations Analyst', 'GoodLeap'),
+    normalizeKey('Strategy & Operations Analyst', 'GoodLeap'));
+  assert.equal(normalizeKey('Analyst', '1stDibs'), normalizeKey('Analyst', '1stdibs.com'));
+  assert.equal(normalizeKey('Analyst', 'Santander'), normalizeKey('Analyst', 'Santander US'));
+  assert.equal(normalizeKey('Analyst', 'Acme Technologies'), normalizeKey('Analyst', 'Acme'));
+  assert.equal(normalizeKey('Analyst', 'Acme (Boston)'), normalizeKey('Analyst', 'Acme'));
+  assert.notEqual(normalizeKey('Analyst', 'Fitch Ratings'), normalizeKey('Analyst', 'Fitch Group'),
+    'brand and parent variants stay separate');
+});
+
+test('lookups still find rows stored under the key before this change', async () => {
+  const { dedupeKeys } = await import('../src/normalize.ts');
+  // "&" used to be stripped, not read as "and"
+  assert.ok(dedupeKeys('Strategy & Operations Analyst', 'GoodLeap').includes('strategyoperationsanalyst|goodleap'));
 });

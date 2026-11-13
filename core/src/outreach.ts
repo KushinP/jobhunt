@@ -1,4 +1,5 @@
 import type { D1Like } from './repo.ts';
+import { normalizeCompany } from './normalize.ts';
 
 /**
  * Outreach: the messages sent to a person about a role, and what came back.
@@ -49,14 +50,7 @@ export class OutreachRuleError extends Error {
 // ---- company and contact identity -------------------------------------------------------
 
 /** "Acme Group, Inc." and "Acme US" are one company for the once-a-day rule. */
-export function normalizeCompany(name: string): string {
-  return (name ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\b(inc|llc|us|usa|corp|corporation|group|ltd|limited)\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { normalizeCompany };
 
 const contactKey = (company: string, name: string) =>
   `${normalizeCompany(company)}|${(name ?? '').toLowerCase().replace(/\s+/g, ' ').trim()}`;

@@ -21,3 +21,5 @@ export * from './outreach.ts';
 export * from './companies.ts';
 export * from './profile.ts';
 export * from './todos.ts';
+export * from './vcjobs.ts';
+export * from './grad.ts';

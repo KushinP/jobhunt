@@ -1,12 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, dedupeKeys } from '@jobhunt/core';
+import {
+  type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, dedupeKeys, linkedInJob, parseVcJobsNewsletter,
+} from '@jobhunt/core';
 import { type Env, fail, ok } from './env.ts';
 import { searchCompanyBoards } from './sources/boards.ts';
 import { searchBuiltIn } from './sources/builtin.ts';
 import { searchIndeed } from './sources/indeed.ts';
 import { searchLinkedIn } from './sources/linkedin.ts';
 import { FETCH_BUDGET, YC_ROLES, fetchYcJob, listYcPostings, minYears, toRawJob, usEligible, ycLocationSlug } from './sources/yc.ts';
+
+/** How Apify reports a spent monthly allowance: HTTP 402, or a usage or credit error type. */
+const APIFY_CREDIT = /apify 402\b|usage|credit|quota|hard.?limit|billing|not-enough|platform-feature-disabled/i;
 
 export function registerSourceTools(server: McpServer, env: Env): void {
   server.registerTool('search_company_boards', {
@@ -95,7 +100,7 @@ export function registerSourceTools(server: McpServer, env: Env): void {
       if (!usEligible(p.location)) { dropped.outside_us++; continue; }
       const years = minYears(p.minExperience);
       if (years != null && years > max_years) { dropped.experience++; continue; }
-      const known = await env.DB.prepare('SELECT 1 AS k FROM jobs WHERE normalized_key IN (?, ?)')
+      const known = await env.DB.prepare('SELECT 1 AS k FROM jobs WHERE normalized_key IN (?, ?, ?)')
         .bind(...dedupeKeys(p.title, p.companyName)).first();
       if (known) { dropped.known++; continue; }
       candidates.push(p);
@@ -138,6 +143,56 @@ export function registerSourceTools(server: McpServer, env: Env): void {
       + (deferred ? `, ${deferred} left for the next run.` : '.'));
   });
 
+  server.registerTool('parse_vc_jobs_newsletter', {
+    description: 'Parse one issue of the weekly Venture Capital Jobs newsletter '
+      + '(from:venturecapitaljobs@substack.com) and ingest its roles. Pass the PLAIN_TEXT body that '
+      + 'Gmail get_thread returns, unchanged. The server parses one role per line, skips lines whose '
+      + 'employer is withheld, follows each Substack link (and any lnkd.in hop) to the real posting, '
+      + 'stores LinkedIn links as /jobs/view/ID/ with their id, and scores and ingests with source '
+      + '"vc_jobs_newsletter". It resolves at most `max` links per call: when `remaining` is above 0, '
+      + 'call again with `skip` = the `next_skip` it returns. The roles arrive without JDs: run fetch_jds after.',
+    inputSchema: {
+      body: z.string().min(100).describe('the issue\'s plain-text body, as Gmail returned it'),
+      skip: z.number().int().min(0).default(0).describe('roles already handled by an earlier call'),
+      max: z.number().int().min(1).max(40).default(25),
+    },
+  }, async ({ body, skip, max }) => {
+    const { roles, skipped } = parseVcJobsNewsletter(body);
+    if (!roles.length) return fail('No roles found: pass the PLAIN_TEXT body of a Venture Capital Jobs issue, unchanged.');
+    const batch = roles.slice(skip, skip + max);
+    const unresolved: string[] = [];
+    const jobs: RawJob[] = [];
+    for (const r of batch) {
+      let url = r.redirect;
+      try {
+        // follows Substack's redirect and any lnkd.in hop; LinkedIn may refuse the last page,
+        // but the url it was asked for is still the posting
+        const res = await fetch(r.redirect, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0' } });
+        url = res.url || r.redirect;
+        await res.body?.cancel();
+      } catch {
+        unresolved.push(`${r.title} @ ${r.company}`);
+      }
+      const li = linkedInJob(url);
+      jobs.push({
+        title: r.title, company: r.company, location: r.location, salary: r.salary,
+        url: li?.url ?? url, source: 'vc_jobs_newsletter', source_job_id: li?.id ?? null,
+      });
+    }
+    const cfg = await loadConfig(env.DB);
+    const res = await ingestJobs(env.DB, cfg, 'vc_jobs_newsletter', jobs);
+    const remaining = Math.max(0, roles.length - skip - batch.length);
+    return ok({
+      parsed: roles.length, handled: batch.length, remaining, next_skip: remaining ? skip + batch.length : null,
+      found: res.found, kept: res.kept, auto_generate: res.auto_generate, duplicates: res.duplicates,
+      discarded: res.discarded, kept_roles: res.inserted.map((i) => `${i.score}  ${i.status}  ${i.title} @ ${i.company}`),
+      kept_ids: res.inserted.filter((i) => i.status !== 'Discarded').map((i) => i.id),
+      unnamed_employer_skipped: skipped.length, unresolved_links: unresolved,
+    }, `VC Jobs newsletter: ${batch.length} of ${roles.length} roles handled, ${res.kept} kept, `
+      + `${res.duplicates} already known, ${res.discarded} discarded`
+      + (remaining ? `. ${remaining} remain: call again with skip ${skip + batch.length}.` : '.'));
+  });
+
   // Both Apify sources ingest on the server, like the boards and YC: a run returns ~30 full
   // JDs (~170k characters), which is too large to relay through a chat turn to ingest_jobs,
   // and relaying them without JDs left every role scored on its title alone.
@@ -150,6 +205,20 @@ export function registerSourceTools(server: McpServer, env: Env): void {
         + 'sources_unavailable. Fix: wrangler secret put APIFY_TOKEN');
     }
     const r = await run();
+    if (r.error && APIFY_CREDIT.test(r.error)) {
+      // A monthly usage cap is not a flaky call: retrying it, or moving on to the other Apify
+      // sources, only spends more of nothing. The flag lets the run stop without reading prose.
+      return {
+        isError: true,
+        content: [{ type: 'text' as const, text: JSON.stringify({
+          apify_credit_exhausted: true, source,
+          instruction: `Apify's monthly credit is used up. Do not retry, and skip the other Apify sources `
+            + `(LinkedIn, Indeed, Built In) for this run. Record "${source} (Apify monthly credit used up)" `
+            + 'in sources_unavailable.',
+          error: r.error.slice(0, 300),
+        }) }],
+      };
+    }
     if (r.error) return fail(`${label} search failed: ${r.error}. Record ${source} in sources_unavailable.`);
     // Part of a run can fail while the rest returns jobs (Built In runs two levels); the jobs
     // are kept and the failure is said out loud rather than dropped.

@@ -76,7 +76,7 @@ export function OutreachBadge({ value }: { value?: 'none' | 'drafted' | 'sent' |
  * a person recognises. */
 const SOURCE_NAME: Record<string, string> = {
   company_boards: 'Company boards', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
-  yc: 'Y Combinator', linkedin: 'LinkedIn', linkedin_email: 'LinkedIn alert email',
+  yc: 'Y Combinator', linkedin: 'LinkedIn', linkedin_email: 'LinkedIn alert email', vc_jobs_newsletter: 'VC Jobs newsletter',
   linkedin_alerts: 'LinkedIn alert email', gmail_linkedin_alerts: 'LinkedIn alert email',
   indeed: 'Indeed', ziprecruiter: 'ZipRecruiter', dice: 'Dice', builtin: 'Built In',
   handshake: 'Handshake', wellfound: 'Wellfound', browser: 'Your browser', manual: 'Added by you',
@@ -103,7 +103,11 @@ export function ScoreBadge({ score }: { score: number | null }) {
 export function Breakdown({ raw }: { raw: string | null }) {
   if (!raw) return null;
   let parsed: Record<string, number>;
-  try { parsed = JSON.parse(raw) as Record<string, number>; } catch { return null; }
+  let notes: { years_evidence?: string; missing_skill?: string; unmet_requirements?: string[]; grad_window?: string };
+  try {
+    parsed = JSON.parse(raw) as Record<string, number>;
+    notes = parsed as unknown as typeof notes;
+  } catch { return null; }
   const max: Record<string, number> = {
     title: 20, domain: 25, skill: 20, seniority: 20, location: 15,
   };
@@ -125,9 +129,18 @@ export function Breakdown({ raw }: { raw: string | null }) {
         </div>
       ))}
       {parsed.years_required != null && (
-        <p className="pt-1 text-xs text-muted">
+        <p className="pt-1 text-xs text-muted" title={notes.years_evidence}>
           JD asks for {parsed.years_required}+ years of experience
         </p>
+      )}
+      {notes.missing_skill && (
+        <p className="text-xs text-warn">Requires {notes.missing_skill}: held in New</p>
+      )}
+      {notes.unmet_requirements?.length ? (
+        <p className="text-xs text-warn">Requires {notes.unmet_requirements.join(', ')}: held in New</p>
+      ) : null}
+      {notes.grad_window && (
+        <p className="text-xs text-warn">Graduation window: {notes.grad_window}</p>
       )}
     </div>
   );

@@ -359,7 +359,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const r = await resolvePosting(body.url ?? '', fetch, boardNames(cfg.target_boards));
     let existing: unknown = null;
     if (r.title && r.company) {
-      existing = await env.DB.prepare('SELECT id, status, score FROM jobs WHERE normalized_key IN (?, ?)')
+      existing = await env.DB.prepare('SELECT id, status, score FROM jobs WHERE normalized_key IN (?, ?, ?)')
         .bind(...dedupeKeys(r.title, r.company)).first();
     }
     return json({ ...r, existing });

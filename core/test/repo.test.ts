@@ -647,3 +647,70 @@ test('not a fit moves a role to Skip with its reason, and restoring withdraws it
     { not_fit_reason: string | null }).not_fit_reason, null, 'restoring withdraws the verdict');
   assert.equal((await notFitMetrics(db)).total, 1);
 });
+
+test('a LinkedIn job id is one posting whether it came from search, an alert email or the VC newsletter', async () => {
+  const { db, raw } = makeTestDb();
+  await ingestJobs(db, cfg, 'linkedin', [{ title: 'Acquisitions Analyst', company: 'Castellan Real Estate Partners',
+    location: 'Boston, MA', source: 'linkedin', source_job_id: '4469920249', jd_text: AI_JD }]);
+  const r = await ingestJobs(db, cfg, 'linkedin_email', [{ title: 'Acquisitions Analyst',
+    company: 'CRP Affordable Housing', location: 'Boston, MA', source: 'linkedin_email', source_job_id: '4469920249' }]);
+  assert.equal(r.duplicates, 1);
+  const v = await ingestJobs(db, cfg, 'vc_jobs_newsletter', [{ title: 'Analyst, Acquisitions', company: 'CRP',
+    location: 'Boston, MA', source: 'vc_jobs_newsletter', source_job_id: '4469920249' }]);
+  assert.equal(v.duplicates, 1);
+  assert.equal((raw.prepare('SELECT count(*) AS n FROM jobs').get() as { n: number }).n, 1);
+});
+
+test('the dedupe report lists would-be duplicates and changes nothing', async () => {
+  const { db, raw } = makeTestDb();
+  const { dedupeReport } = await import('../src/repo.ts');
+  await ingestJobs(db, cfg, 'linkedin', [{ title: 'Strategy and Operations Analyst', company: 'GoodLeap',
+    location: 'Boston, MA', jd_text: AI_JD }]);
+  // stored before "&" was read as "and"
+  raw.prepare(`INSERT INTO jobs (id, title, company, normalized_key, source, status)
+    VALUES ('old', 'Strategy & Operations Analyst', 'GoodLeap', 'strategyoperationsanalyst|goodleap', 'linkedin', 'New')`).run();
+  const before = raw.prepare('SELECT count(*) AS n FROM jobs').get();
+  const rep = await dedupeReport(db);
+  assert.equal(rep.groups.length, 1);
+  assert.deepEqual(rep.groups[0].rows.map((x) => x.title).sort(),
+    ['Strategy & Operations Analyst', 'Strategy and Operations Analyst']);
+  assert.deepEqual(raw.prepare('SELECT count(*) AS n FROM jobs').get(), before);
+});
+
+test('the queue reports its full depth and pages past the first rows', async () => {
+  const { db } = makeTestDb();
+  const { queueTotal } = await import('../src/repo.ts');
+  for (const c of ['Acme', 'Beta', 'Gamma']) {
+    await ingestJobs(db, cfg, 'test', [{ title: 'AI Solutions Consultant', company: c, location: 'Boston, MA', jd_text: AI_JD }]);
+  }
+  await db.prepare("UPDATE jobs SET status = 'Generate'").bind().run();
+  assert.equal(await queueTotal(db), 3);
+  const first = await listQueue(db, 2);
+  const rest = await listQueue(db, 2, 2);
+  assert.equal(first.length, 2);
+  assert.equal(rest.length, 1);
+});
+
+test('stale Indeed and ZipRecruiter roles with no JD are skipped below the auto-queue bar only', async () => {
+  const { db, raw } = makeTestDb();
+  const { skipStaleNoJd } = await import('../src/repo.ts');
+  const add = async (company: string, source: string) => {
+    await ingestJobs(db, cfg, source, [{ title: 'AI Solutions Consultant', company, location: 'Boston, MA', source }]);
+    return (raw.prepare('SELECT id FROM jobs WHERE company = ?').get(company) as { id: string }).id;
+  };
+  const low = await add('Zip Low', 'ziprecruiter');
+  const high = await add('Zip High', 'ziprecruiter');
+  const li = await add('Li Co', 'linkedin');
+  const mine = await add('Mine Co', 'indeed');
+  const fresh = await add('Fresh Co', 'indeed');
+  raw.prepare("UPDATE jobs SET status = 'New', score = 63, created_at = datetime('now', '-8 days')").run();
+  raw.prepare("UPDATE jobs SET score = 80 WHERE id = ?").run(high);
+  raw.prepare("UPDATE jobs SET created_at = datetime('now', '-2 days') WHERE id = ?").run(fresh);
+  await setStatus(db, mine, 'New', 'human', 'keep this');
+  const r = await skipStaleNoJd(db, cfg);
+  assert.deepEqual(r.skipped.map((x) => x.id), [low]);
+  const status = (id: string) => (raw.prepare('SELECT status FROM jobs WHERE id = ?').get(id) as { status: string }).status;
+  assert.equal(status(low), 'Skip');
+  for (const id of [high, li, mine, fresh]) assert.equal(status(id), 'New');
+  assert.deepEqual(r.open_by_hand.map((x) => x.id), [high], 'a high scorer waits for the person, with its link');
+});

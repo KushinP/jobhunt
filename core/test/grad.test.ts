@@ -36,3 +36,9 @@ test('a graduation-window conflict holds the role in New without discarding it',
   assert.equal(r.drop_reason, null);
   assert.equal(statusForScore(r), 'New');
 });
+
+test('pursuing a charter or certificate is not current enrollment', () => {
+  assert.equal(gradWindowConflict('Currently pursuing or interested in obtaining the CFA designation.', G), null);
+  assert.equal(gradWindowConflict('Candidates currently pursuing the CFA or CAIA are encouraged to apply.', G), null);
+  assert.ok(gradWindowConflict('Currently pursuing a Bachelor\'s or Master\'s degree in economics.', G));
+});

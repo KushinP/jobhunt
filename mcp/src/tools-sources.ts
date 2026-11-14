@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
-  type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, dedupeKeys, linkedInJob, parseVcJobsNewsletter,
+  type RawJob, forbiddenProfileField, hasHit, ingestJobs, loadConfig, dedupeKeys, linkedInJob, parseVcJobsNewsletter, resolveNewsletterLink,
 } from '@jobhunt/core';
 import { type Env, fail, ok } from './env.ts';
 import { searchCompanyBoards } from './sources/boards.ts';
@@ -163,16 +163,10 @@ export function registerSourceTools(server: McpServer, env: Env): void {
     const unresolved: string[] = [];
     const jobs: RawJob[] = [];
     for (const r of batch) {
-      let url = r.redirect;
-      try {
-        // follows Substack's redirect and any lnkd.in hop; LinkedIn may refuse the last page,
-        // but the url it was asked for is still the posting
-        const res = await fetch(r.redirect, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0' } });
-        url = res.url || r.redirect;
-        await res.body?.cancel();
-      } catch {
-        unresolved.push(`${r.title} @ ${r.company}`);
-      }
+      // follows Substack's redirect and any lnkd.in hop by their headers alone: the posting
+      // itself is never requested, and no other host is contacted
+      const url = await resolveNewsletterLink(r.redirect);
+      if (url === r.redirect) unresolved.push(`${r.title} @ ${r.company}`);
       const li = linkedInJob(url);
       jobs.push({
         title: r.title, company: r.company, location: r.location, salary: r.salary,

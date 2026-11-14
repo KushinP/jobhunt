@@ -46,3 +46,25 @@ test('LinkedIn links are normalised to the job view with its id', () => {
     { url: 'https://www.linkedin.com/jobs/view/4469920249/', id: '4469920249' });
   assert.equal(linkedInJob('https://jobs.ashbyhq.com/acme/123'), null);
 });
+
+test('newsletter links are followed through redirectors only, never to the destination', async () => {
+  const { resolveNewsletterLink } = await import('../src/vcjobs.ts');
+  const asked: string[] = [];
+  const hops: Record<string, string> = {
+    'https://substack.com/redirect/abc': 'https://lnkd.in/xyz',
+    'https://lnkd.in/xyz': 'https://www.linkedin.com/jobs/view/4469920249/',
+  };
+  const fake = (async (u: string) => {
+    asked.push(u);
+    return new Response(null, { status: hops[u] ? 302 : 200, headers: hops[u] ? { location: hops[u] } : {} });
+  }) as unknown as typeof fetch;
+  assert.equal(await resolveNewsletterLink('https://substack.com/redirect/abc', fake),
+    'https://www.linkedin.com/jobs/view/4469920249/');
+  assert.deepEqual(asked, ['https://substack.com/redirect/abc', 'https://lnkd.in/xyz'], 'the destination is never requested');
+
+  asked.length = 0;
+  assert.equal(await resolveNewsletterLink('http://169.254.169.254/latest', fake), 'http://169.254.169.254/latest');
+  assert.equal(await resolveNewsletterLink('https://evil.example/redirect', fake), 'https://evil.example/redirect');
+  assert.equal(await resolveNewsletterLink('https://substack.com.evil.example/x', fake), 'https://substack.com.evil.example/x');
+  assert.deepEqual(asked, [], 'no request to a host outside the redirectors');
+});

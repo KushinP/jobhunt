@@ -45,8 +45,13 @@ export function gradWindowConflict(jd: string | null | undefined, graduated: str
     const cls = /\bclass of (20\d\d)\b/.exec(s);
     if (cls && Number(cls[1]) * 12 + 5 > grad) return `${cls[0]} vs graduated ${gradLabel}`;
     // current enrollment, unless a recent graduate is also welcome
+    // about a degree, not a charter: "currently pursuing the CFA designation" (Aristotle) is not
+    // enrollment, "currently pursuing a bachelor's or master's degree" (Kroll) is
     const enrolled = /\b(?:currently|must be)\s+(?:pursuing|enrolled)\b/.exec(s);
-    if (enrolled && !/\bor\s+(?:have\s+)?(?:recently\s+)?(?:completed|graduated|obtained|earned)\b/.test(s)) {
+    const about = enrolled ? s.slice(enrolled.index, enrolled.index + 90) : '';
+    const degree = /\b(?:degree|bachelor|master|undergraduate|graduate program|university|college|school|mba|phd|student)/.test(about)
+      && !/\b(?:cfa|caia|frm|cpa|charter|certification|certificate|designation|license)\b/.test(about);
+    if (enrolled && degree && !/\bor\s+(?:have\s+)?(?:recently\s+)?(?:completed|graduated|obtained|earned)\b/.test(s)) {
       return `${s.slice(enrolled.index, enrolled.index + 80).trim()} vs graduated ${gradLabel}`;
     }
   }

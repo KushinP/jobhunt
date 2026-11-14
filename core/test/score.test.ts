@@ -513,3 +513,23 @@ test('a title outside the targets is held for review when the JD fits strongly, 
     jd: fullJd('Plan social campaigns, write newsletter copy and manage the brand calendar for our stores.') });
   assert.equal(statusForScore(weak), 'Discarded', String(weak.drop_reason));
 });
+
+test('negated requirements, licenses earned after hire and either-or tool lists are not unmet requirements', async () => {
+  const { unmetRequirements } = await import('../src/score.ts');
+  const terms = DEFAULT_CONFIG.unmet_requirement_terms;
+  // Heritage Holding
+  assert.deepEqual(unmetRequirements('Requirements:\n- Solid grasp of financial statements and how the numbers '
+    + 'connect — you do not need to be a CPA or accountant.', terms).terms, []);
+  // Citi, Wells Fargo, D.A. Davidson
+  assert.deepEqual(unmetRequirements('Qualifications:\n- Series 79, 7 and 63 licenses (to be obtained upon hire)', terms).terms, []);
+  assert.deepEqual(unmetRequirements('Required Qualifications:\n- FINRA Series 63 and 79 examinations, or equivalent must '
+    + 'be completed within either a 90 or 180-day time period following commencement of employment', terms).terms, []);
+  assert.deepEqual(unmetRequirements('Requirements:\n- Upon hiring, the successful completion of the FINRA Investment '
+    + 'Banking exam (Series 79) and the state law exam (Series 63)', terms).terms, []);
+  // Hemans: examples in an either-or list
+  assert.deepEqual(unmetRequirements('Requirements:\n- Experience with automation, data analysis, or visualization tools '
+    + 'such as Alteryx, Power BI, Python, SQL, or VBA.', terms).terms, []);
+  // still caught
+  assert.deepEqual(unmetRequirements('Requirements:\n- Working knowledge of SQL and relational databases', terms).terms, ['sql']);
+  assert.deepEqual(unmetRequirements('Requirements:\n- Active Series 7 license required', terms).terms, ['series 7']);
+});

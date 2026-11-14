@@ -60,3 +60,30 @@ export function linkedInJob(url: string): { url: string; id: string } | null {
     ?? /linkedin\.com\/jobs\/[^?#]*[?&]currentJobId=(\d{6,})/i.exec(url ?? '');
   return m ? { url: `https://www.linkedin.com/jobs/view/${m[1]}/`, id: m[1] } : null;
 }
+
+/** The only hosts the server asks for anything: the newsletter's own link shorteners. */
+const REDIRECTORS = /^(?:[a-z0-9-]+\.)*(?:substack\.com|lnkd\.in)$/i;
+
+/**
+ * Where a newsletter link leads, read from redirect headers only. The server requests a hop only
+ * when its host is a known redirector (Substack, lnkd.in), never the destination itself, so a
+ * spoofed issue cannot make the Worker send requests to arbitrary hosts. Returns the first url
+ * outside the redirectors, or the link itself when it cannot be followed.
+ */
+export async function resolveNewsletterLink(url: string, fetcher: typeof fetch = fetch, maxHops = 5): Promise<string> {
+  let current = url;
+  for (let i = 0; i < maxHops; i++) {
+    let u: URL;
+    try { u = new URL(current); } catch { return current; }
+    if (u.protocol !== 'https:' || !REDIRECTORS.test(u.hostname)) return current;
+    let res: Response;
+    try {
+      res = await fetcher(current, { redirect: 'manual', headers: { 'user-agent': 'Mozilla/5.0' } });
+    } catch { return current; }
+    await res.body?.cancel();
+    const next = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+    if (!next) return current;
+    current = new URL(next, current).toString();
+  }
+  return current;
+}

@@ -374,6 +374,13 @@ const REQ_HEADING = /^(?:basic |minimum |required |key )?(?:requirements|qualifi
 // the heading to the next line ("Preferred QualificationsCFA charter").
 const OTHER_HEADING = /^(?:preferred|bonus|nice[- ]to[- ]haves?|pluses|benefits|perks|what we offer|compensation|about (?:us|the)|why join|equal opportunity|what you(?:'ll| will) do|responsibilities)\b/;
 const MUST = /\b(required|requires?|must)\b/;
+// "you do not need to be a CPA" (Heritage Holding) states the opposite of a requirement.
+const NEGATED = /\b(?:do not|don['’]t|does not|doesn['’]t|not)\s+(?:need|required|necessary|have to)\b|\bno (?:need|requirement)\b/;
+// Licenses a bank sponsors after the start date (Citi "to be obtained upon hire", Wells Fargo
+// "within 90 or 180 days following commencement of employment") are not missing qualifications.
+const AFTER_HIRE = /\b(?:upon|after|following)\s+(?:hire|hiring|joining|commencement|starting|start)\b|\bto be (?:obtained|completed|acquired)\b|\bwithin\b[^.]{0,40}\bdays?\b/;
+// Examples offered as alternatives ("tools such as Alteryx, Power BI, Python, SQL, or VBA").
+const EXAMPLES = /\b(?:such as|e\.g\.|for example|at least 1 of)\b/;
 
 /**
  * Terms from `unmet_requirement_terms` that a JD states as requirements: on a line inside a
@@ -393,7 +400,8 @@ export function unmetRequirements(jd: string | null | undefined, terms: readonly
     if (OTHER_HEADING.test(line)) { inSection = false; continue; }
     if (REQ_HEADING.test(line)) { inSection = true; continue; }
     if (!inSection && !MUST.test(line)) continue;
-    if (PREFERRED.test(line) || SOFT.test(line)) continue;
+    if (PREFERRED.test(line) || SOFT.test(line) || NEGATED.test(line) || AFTER_HIRE.test(line)) continue;
+    if (EXAMPLES.test(line) && /\bor\b/.test(line)) continue;
     for (const term of terms) {
       if (!hits.includes(term) && hasHit(line, [term])) {
         hits.push(term);
